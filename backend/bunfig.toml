@@ -1,0 +1,13 @@
+# Bun configuration
+[install]
+# Install dependencies in development mode
+dev = true
+
+[test]
+# Test configuration
+coverage = true
+preload = ["./tests/setup.ts"]
+
+[run]
+# Hot reload in development
+hot = true
