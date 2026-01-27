@@ -1,38 +1,49 @@
-# AutoAcct Backend - Phase 1 Foundation
+# AutoAcct Backend
 
-**Version:** 1.0.0  
-**Status:** 🚧 Phase 1 - Foundation Setup  
-**Last Updated:** January 22, 2026
+**Version:** 1.2.0 (Phase 3E - Intelligence Layer)
+**Status:** 🚀 Active Development
+**Last Updated:** January 2026
 
 ---
 
 ## 🎯 Overview
 
-AutoAcct is a self-hosted OCR AI-powered auto-accounting system designed with:
-- **Dual Mode Architecture** (DEV/PROD)
-- **Financial Integrity** (4 Golden Rules)
-- **Modular Design** (Lego Architecture)
-- **Production-Ready** (from Phase 1)
+The AutoAcct Backend is the core engine ensuring financial integrity and intelligent processing. It orchestrates the flow from Receipt Upload -> OCR Extraction -> AI Classification -> Double-Entry Ledger Posting.
+
+## 🔑 Key Modules
+
+### 1. Receipt Management (`/modules/receipt`)
+-   Handles file uploads (Multer) and duplicate detection (SHA-256).
+-   Manages processing status (Queued -> OCR -> AI -> Confirmed).
+-   **New:** Supports **Split Transactions** (Line Items) in the `Receipt` model.
+
+### 2. Accounting Ledger (`/modules/accounting`)
+-   **Medici Integration**: Implements a double-entry ledger system.
+-   **Journal Entries**: Atomically records debits and credits.
+-   **Rules Enforced**:
+    -   *Trial Balance*: Total Debits must equal Total Credits.
+    -   *Immutability*: Posted transactions cannot be altered, only reversed.
+
+### 3. AI & OCR (`/modules/ocr`, `/modules/ai`)
+-   **OCR**: Pluggable architecture supporting PaddleOCR, Google Vision, etc.
+-   **Groq AI**: Intelligent classification of line items into accounting categories.
+
+### 4. Transaction Service (`/modules/transaction`)
+-   Manages high-level transaction workflows (`createDraft`, `postTransaction`).
 
 ---
 
-## 🏗️ Phase 1 Checklist (Day 1 Complete!)
+## 🛠️ API Endpoints
 
-### ✅ Completed
-- [x] Project structure (Lego architecture)
-- [x] ConfigManager with Zod validation
-- [x] Winston logger with correlationId
-- [x] Money utilities (Integer-only, Plug method)
-- [x] Custom error hierarchy
-- [x] TypeScript configuration
-- [x] Test framework setup (Bun)
-- [x] Unit tests for money.ts (100% coverage)
+### Receipts
+-   `POST /api/receipts/upload` - Upload a new receipt image/PDF.
+-   `GET /api/receipts/queue` - Get receipts waiting for processing/review.
+-   `GET /api/receipts/:id` - Get receipt details (including extracted line items).
+-   `POST /api/receipts/:id/confirm` - Confirm receipt and create transaction (supports Split Items).
 
-### 🔜 Next Steps (Day 2-3)
-- [ ] Database schemas (ExportLog, SystemLog)
-- [ ] MongoDB connection with replica set
-- [ ] Adapter interfaces (IAdapter, IAccountingAdapter)
-- [ ] Mock servers (Express: 9000, OCR: 8000)
+### Transactions
+-   `GET /api/transactions` - List recent transactions.
+-   `GET /api/transactions/trial-balance` - Get current trial balance.
 
 ---
 
@@ -43,7 +54,24 @@ AutoAcct is a self-hosted OCR AI-powered auto-accounting system designed with:
 bun install
 ```
 
-### 2. Run Tests
+### 2. Environment Setup
+Copy `.env.example` to `.env` and configure:
+-   `MONGODB_URI`
+-   `GROQ_API_KEY` (for AI classification)
+
+### 3. Run Server
+```bash
+bun run dev
+```
+
+### 4. Run Tests
 ```bash
 bun test
 ```
+
+---
+
+## 🏗️ Architecture Notables
+-   **Lego Architecture**: Modular, domain-driven design.
+-   **Satang-based Math**: All monetary values are integers (Satang) to prevent floating-point errors.
+-   **Correlation IDs**: End-to-end request tracing.
