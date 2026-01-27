@@ -1,0 +1,133 @@
+// backend/src/modules/workflow/services/WorkflowService.ts
+
+import { ITeableService } from '../../teable/types/teable.types';
+import { TransactionService } from '../../transaction/services/TransactionService';
+import { IReceipt } from '@/models/schemas/Receipt.schema';
+import Receipt from '@/models/Receipt.model'; // Mongoose Model
+import config from '@/config/ConfigManager';
+import logger from '@/config/logger';
+import { TeableService } from '../../teable/adapters/TeableService';
+import { MockTeableService } from '../../teable/adapters/MockTeableService';
+
+/**
+ * WORKFLOW SERVICE - Event Orchestrator
+ * 
+ * Triggered by: OCRWorker.onJobCompleted
+ * Executes:
+ * 1. TeableService.createRecord() -> Teable Kanban
+ * 2. TransactionService.createDraft() -> Ledger (Draft)
+ * 3. Receipt.findByIdAndUpdate() -> MongoDB (Link IDs)
+ */
+export class WorkflowService {
+    private teableService: ITeableService;
+    private transactionService: TransactionService;
+
+    constructor() {
+        // Teable Factory Logic
+        if (config.get('TEABLE_SERVICE_MODE') === 'mock' || !config.isProduction()) {
+            this.teableService = new MockTeableService();
+            logger.info({ action: 'workflow_init', mode: 'MOCK_TEABLE' });
+        } else {
+            const apiKey = config.get('TEABLE_API_KEY');
+            const baseId = config.get('TEABLE_BASE_ID');
+            const tableId = config.get('TEABLE_RECEIPT_TABLE_ID');
+            if (!apiKey || !baseId) throw new Error('Teable Config Missing');
+
+            this.teableService = new TeableService(
+                config.get('TEABLE_API_URL'),
+                apiKey,
+                baseId,
+                tableId
+            );
+            logger.info({ action: 'workflow_init', mode: 'PROD_TEABLE' });
+        }
+
+        this.transactionService = new TransactionService();
+    }
+
+    /**
+     * Main orchestration method - triggered by OCRWorker on successful OCR completion
+     */
+    async onOCRComplete(
+        receipt: IReceipt,
+        correlationId: string
+    ): Promise<{ teableId: string; transactionId: string }> {
+        const startTime = Date.now();
+
+        try {
+            logger.info({
+                action: 'workflow_start',
+                correlationId,
+                receiptId: receipt._id
+            });
+
+            // 1. Create Teable Record
+            const teableResult = await this.teableService.createRecord({
+                receiptId: receipt._id.toString(),
+                vendor: receipt.ocrResult?.vendor || 'Unknown Vendor',
+                amount: receipt.ocrResult?.amount || 0, // already in Satang
+                date: receipt.ocrResult?.date ? new Date(receipt.ocrResult.date) : new Date(),
+                taxId: receipt.ocrResult?.taxId,
+                ocrConfidence: receipt.ocrConfidence || 0,
+                rawOcrText: receipt.ocrResult?.rawText || '',
+                imageUrl: receipt.driveFileId, // Assuming driveFileId is URL or ID
+                status: this.determineRecordStatus(receipt.ocrConfidence || 0)
+            }, correlationId);
+
+            // 2. Create Draft Transaction
+            const txResult = await this.transactionService.createDraft({
+                clientId: receipt.clientId.toString(),
+                receiptId: receipt._id.toString(),
+                // Auto-guess accounts (to be refined by user)
+                account: {
+                    debit: '5000-Expense', // Placeholder
+                    credit: '1000-Cash'    // Placeholder
+                },
+                debit: receipt.ocrResult?.amount || 0,
+                credit: receipt.ocrResult?.amount || 0,
+                description: receipt.ocrResult?.vendor ? `Receipt from ${receipt.ocrResult.vendor}` : 'OCR Receipt',
+                date: receipt.ocrResult?.date ? new Date(receipt.ocrResult.date) : new Date(),
+                reference: `OCR-${receipt._id}`
+            }, receipt.createdBy?.toString() || 'system', correlationId);
+
+            // 3. Link IDs in MongoDB
+            await Receipt.findByIdAndUpdate(receipt._id, {
+                teableId: teableResult.id,
+                transactionId: txResult.id,
+                workflowStatus: 'completed',
+                workflowCompletedAt: new Date(),
+                workflowDuration: Date.now() - startTime
+            });
+
+            logger.info({
+                action: 'workflow_complete',
+                correlationId,
+                teableId: teableResult.id,
+                transactionId: txResult.id
+            });
+
+            return { teableId: teableResult.id, transactionId: txResult.id };
+
+        } catch (error: any) {
+            logger.error({
+                action: 'workflow_failed',
+                correlationId,
+                error: error.message
+            });
+
+            // Update status
+            await Receipt.findByIdAndUpdate(receipt._id, {
+                workflowStatus: 'failed',
+                workflowError: error.message,
+                workflowFailedAt: new Date()
+            });
+
+            throw error;
+        }
+    }
+
+    private determineRecordStatus(confidence: number): 'pending' | 'needs_review' {
+        const threshold = config.get('WORKFLOW_AUTO_DRAFT_THRESHOLD') || 0.75;
+        return confidence >= threshold ? 'pending' : 'needs_review';
+    }
+}

@@ -17,7 +17,7 @@ const ConfigSchema = z.object({
     // ===========================
     // DUAL MODE SETTINGS
     // ===========================
-    APP_MODE: z.enum(['dev', 'staging', 'production']).default('dev'),
+    APP_MODE: z.enum(['dev', 'staging', 'production', 'test']).default('dev'),
     IS_DEBUG: z
         .string()
         .optional()
@@ -40,6 +40,7 @@ const ConfigSchema = z.object({
     // ===========================
     // EXTERNAL SERVICES (Adapters)
     // ===========================
+    OCR_SERVICE_MODE: z.enum(['mock', 'groq']).default('mock'),
     OCR_WORKER_URL: z.string().url().default('http://localhost:8000'),
 
     EXPRESS_MODE: z.enum(['debug', 'staging', 'production']).default('debug'),
@@ -49,10 +50,19 @@ const ConfigSchema = z.object({
     GROQ_API_KEY: z.string().min(1, 'Groq API Key required'),
     GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
 
+    // ===========================
+    // TEABLE INTEGRATION (Task 3)
+    // ===========================
+    TEABLE_SERVICE_MODE: z.enum(['mock', 'teable']).default('mock'),
+
+    // Workflow
+    WORKFLOW_AUTO_TRIGGER: z.string().transform(val => val !== 'false').default('true'),
+    WORKFLOW_AUTO_DRAFT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+
     TEABLE_API_URL: z.string().url().default('https://app.teable.io/api'),
     TEABLE_API_KEY: z.string().optional(),
     TEABLE_BASE_ID: z.string().optional(),
-    TEABLE_RECEIPT_TABLE_ID: z.string().optional(),
+    TEABLE_RECEIPT_TABLE_ID: z.string().default('Receipt'),
 
     // ===========================
     // LOGGING
@@ -78,6 +88,7 @@ const ConfigSchema = z.object({
     // ===========================
     PORT: z.coerce.number().int().default(3000),
     HOST: z.string().default('0.0.0.0'),
+    CORS_ORIGIN: z.string().default('*'),
 });
 
 type Config = z.infer<typeof ConfigSchema>;
@@ -179,7 +190,7 @@ class ConfigManager {
             'ENCRYPTION_KEY',
         ];
 
-        const redacted = { ...this.config };
+        const redacted: any = { ...this.config };
         sensitiveKeys.forEach((key) => {
             if (redacted[key]) {
                 redacted[key] = '***REDACTED***' as any;
