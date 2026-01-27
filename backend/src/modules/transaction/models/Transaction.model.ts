@@ -1,0 +1,110 @@
+// backend/src/modules/transaction/models/Transaction.model.ts
+
+import mongoose, { Model, Query } from 'mongoose';
+import TransactionSchema, { ITransaction } from './schemas/Transaction.schema';
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+
+interface ITransactionModel extends Model<ITransaction> {
+    /**
+     * Calculate trial balance for a client
+     */
+    getTrialBalance(
+        clientId: string,
+        startDate?: Date,
+        endDate?: Date
+    ): Promise<{ totalDebit: number; totalCredit: number; balanced: boolean }>;
+
+    /**
+     * Count posted transactions for a client
+     */
+    getPostedCount(clientId: string): Promise<number>;
+}
+
+// ============================================
+// STATIC METHODS
+// ============================================
+
+// Use Model<ITransaction> as `this` context to satisfy TS signature compatibility
+TransactionSchema.statics.getTrialBalance = async function (
+    this: Model<ITransaction>,
+    clientId: string,
+    startDate?: Date,
+    endDate?: Date
+) {
+    const filter: any = {
+        clientId: clientId
+    };
+
+    filter.status = 'posted';
+
+    if (startDate || endDate) {
+        filter.date = {};
+        if (startDate) filter.date.$gte = startDate;
+        if (endDate) filter.date.$lte = endDate;
+    }
+
+    const result = await this.aggregate([
+        { $match: filter },
+        {
+            $group: {
+                _id: null,
+                totalDebit: { $sum: '$debit' },
+                totalCredit: { $sum: '$credit' },
+            },
+        },
+    ]);
+
+    if (result.length === 0) {
+        return { totalDebit: 0, totalCredit: 0, balanced: true };
+    }
+
+    const { totalDebit, totalCredit } = result[0];
+    return {
+        totalDebit,
+        totalCredit,
+        balanced: totalDebit === totalCredit,
+    };
+};
+
+TransactionSchema.statics.getPostedCount = async function (
+    this: Model<ITransaction>,
+    clientId: string
+) {
+    return this.countDocuments({
+        clientId,
+        status: 'posted'
+    });
+};
+
+// ============================================
+// QUERY HELPERS
+// ============================================
+
+// Cast query helpers to avoid property does not exist on {} error
+(TransactionSchema.query as any).isDraft = function (
+    this: Query<any, ITransaction>
+) {
+    return this.where('status').equals('draft');
+};
+
+(TransactionSchema.query as any).isPosted = function (
+    this: Query<any, ITransaction>
+) {
+    return this.where('status').equals('posted');
+};
+
+(TransactionSchema.query as any).byDateRange = function (
+    this: Query<any, ITransaction>,
+    start: Date,
+    end: Date
+) {
+    return this.where('date').gte(start as any).lte(end as any);
+};
+
+// Start exporting Model
+export type { ITransaction };
+export const Transaction = mongoose.model<ITransaction, ITransactionModel>('Transaction', TransactionSchema);
+export default Transaction;
