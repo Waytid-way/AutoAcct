@@ -4,7 +4,10 @@ import crypto from 'crypto';
 import Receipt, { IReceipt } from '@/models/Receipt.model';
 import { TransactionService } from '@/modules/transaction/services/TransactionService';
 import { AccountingService } from '@/modules/accounting/services/AccountingService';
+import { GroqClassificationService } from '@/modules/ai/GroqClassificationService';
+import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetectionService';
 import { MoneyInt } from '@/utils/money';
+import config from '@/config/ConfigManager';
 import {
   DuplicateReceiptError,
   NotFoundError,
@@ -36,6 +39,8 @@ export class ReceiptService {
   private logger: Logger;
   private transactionService: TransactionService;
   private accountingService: AccountingService;
+  private groqService: GroqClassificationService;
+  private anomalyService: AnomalyDetectionService;
 
   /**
    * Initialize Service with Dependencies
@@ -46,11 +51,15 @@ export class ReceiptService {
   constructor(
     loggerInstance?: Logger,
     transactionService?: TransactionService,
-    accountingService?: AccountingService
+    accountingService?: AccountingService,
+    groqService?: GroqClassificationService,
+    anomalyService?: AnomalyDetectionService
   ) {
     this.logger = loggerInstance || logger;
     this.transactionService = transactionService || new TransactionService(this.logger);
     this.accountingService = accountingService || new AccountingService();
+    this.groqService = groqService || new GroqClassificationService(process.env.GROQ_API_KEY || '');
+    this.anomalyService = anomalyService || new AnomalyDetectionService();
   }
 
   /**
@@ -456,23 +465,51 @@ export class ReceiptService {
     // 2. Branch: Split Transaction vs Simple Transaction
     if (data.lineItems && data.lineItems.length > 0) {
       // Handle Split Entry via AccountingService
-      const splitItems = data.lineItems.map(item => ({
-        debitAccount: item.category || 'Uncategorized Expense',
+      let splitItems = data.lineItems.map(item => ({
+        debitAccount: item.category || '',
         amount: item.totalPrice as MoneyInt,
-        description: `${item.description} (x${item.quantity})`
+        description: `${item.description} (x${item.quantity})`,
+        quantity: item.quantity,
+        totalPrice: item.totalPrice,
+        category: item.category
       }));
 
-      this.logger.info({
-        action: 'confirming_split_transaction',
+      this.logger.debug({
         correlationId,
-        receiptId,
+        action: 'classify_line_items_start',
         itemCount: splitItems.length
       });
 
-      // Use AccountingService to create split entries
+      // Call Groq AI to classify each item
+      const classifications = await this.groqService.classifyLineItems(
+        splitItems.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          totalPrice: item.totalPrice as MoneyInt
+        })),
+        correlationId
+      );
+
+      // Merge AI suggestions into line items
+      splitItems = splitItems.map((item, idx) => {
+        const classification = classifications[idx];
+        const finalCategory = item.category || classification.category;
+
+        return {
+          ...item,
+          debitAccount: finalCategory === 'PENDING_REVIEW' ? 'Uncategorized Expense' : (finalCategory || 'Uncategorized Expense'),
+          category: finalCategory
+        };
+      });
+
+      // Call Accounting Service for Split Transaction
       const entries = await this.accountingService.createSplitEntry(
         receiptId,
-        splitItems,
+        splitItems.map(item => ({
+          debitAccount: item.debitAccount,
+          amount: item.totalPrice as MoneyInt, // Ensure amount is used from totalPrice
+          description: `${item.description} (x${item.quantity})`
+        })),
         'Cash/AgriBank', // Default credit account
         receipt.clientId.toString(),
         correlationId
@@ -483,6 +520,7 @@ export class ReceiptService {
         splitGroupId: entries[0]?.splitGroupId,
         status: 'draft' as const
       };
+
     } else {
       // Handle Simple Entry via TransactionService
       const transaction = await this.transactionService.createDraft({
@@ -497,7 +535,7 @@ export class ReceiptService {
         description: `${data.vendor} - ${data.category || 'Expense'}`,
         date: new Date(data.date),
         reference: receipt.fileName,
-      }, receipt.createdBy || 'system', correlationId);
+      }, receipt.createdBy ? receipt.createdBy.toString() : 'system', correlationId);
 
       result = {
         receiptId,

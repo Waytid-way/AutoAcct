@@ -19,7 +19,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfidenceBadge } from "./ConfidenceBadge";
-import { SplitEntryReview } from "./SplitEntryReview";
+import { SplitEntryReviewCard } from "./SplitEntryReviewCard";
 import { cn, formatCurrency, formatDate, bahtToSatang } from "@/lib/utils";
 import type { ReceiptDetailResponse } from "@/types/api.types";
 
@@ -102,11 +102,11 @@ export function OcrResultCard({
             <Card className={cn("overflow-hidden", className)}>
                 <CardContent className="p-6">
                     <h3 className="text-base font-semibold text-text-primary mb-4">Review Split Items</h3>
-                    <SplitEntryReview
-                        initialItems={receipt.lineItems}
-                        receiptTotal={receipt.extractedFields.amount || 0}
-                        onConfirm={handleSplitConfirm}
-                        onCancel={() => setIsSplitMode(false)}
+                    <SplitEntryReviewCard
+                        receipt={receipt as any}
+                        lineItems={receipt.lineItems || []}
+                        onApprove={async (items) => handleSplitConfirm(items)}
+                        onReject={() => setIsSplitMode(false)}
                     />
                 </CardContent>
             </Card>

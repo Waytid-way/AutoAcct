@@ -15,6 +15,7 @@ import config from './config/ConfigManager';
 // Import routes
 import receiptRoutes from './modules/receipt/routes/receipt.routes';
 import transactionRoutes from './modules/transaction/routes/transaction.routes';
+import anomalyRoutes from './modules/anomaly/routes';
 // import journalRoutes from './modules/journal/routes/journal.routes'; // Task 3
 
 /**
@@ -75,6 +76,7 @@ app.get('/health', (req, res) => {
 // API ROUTES (Auth applied per-route)
 // ============================================
 app.use('/api/receipts', receiptRoutes);
+app.use('/api/anomalies', anomalyRoutes);
 app.use('/api/transactions', transactionRoutes);
 // app.use('/api/journals', journalRoutes);          // Task 3
 

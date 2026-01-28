@@ -119,7 +119,7 @@ describe('ReceiptService', () => {
             );
 
             const receipt = await service.getById(
-                created._id as string,
+                created._id.toString(),
                 clientId,
                 'corr-2'
             );
@@ -270,7 +270,7 @@ describe('ReceiptService', () => {
             );
 
             const updated = await service.submitFeedback(
-                created._id as string,
+                created._id.toString(),
                 {
                     corrections: {
                         amount: 10000,

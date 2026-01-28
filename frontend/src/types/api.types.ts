@@ -7,6 +7,19 @@
 // Receipt Types
 // ============================================
 
+export type Receipt = ReceiptDetailResponse["data"];
+
+export interface LineItem {
+    description: string;
+    quantity: number;
+    unitPrice: number;        // Satang
+    totalPrice: number;       // Satang
+    category?: string;        // User-selected or AI-suggested
+    suggestedCategory?: string;  // ✅ AI suggestion
+    aiConfidence?: number;    // ✅ 0.0 - 1.0
+    aiReasoning?: string;     // ✅ "Food and beverage"
+}
+
 export type ReceiptStatus =
     | "queued"
     | "processing"
@@ -58,8 +71,10 @@ export interface ReceiptDetailResponse {
             quantity: number;
             unitPrice: number;
             totalPrice: number;
+            category?: string;
             suggestedCategory?: string;
             aiConfidence?: number;
+            aiReasoning?: string;
         }>;
         teableCardUrl?: string;
         createdAt: string;
@@ -72,10 +87,16 @@ export interface ReceiptDetailResponse {
 }
 
 export interface ConfirmReceiptRequest {
-    vendor: string;
-    amount: number; // Satang
-    date: string;   // ISO 8601
+    vendor?: string;
+    amount?: number; // Satang
+    date?: string;   // ISO 8601
     category?: string;
+
+    // Split Transactions
+    lineItems?: LineItem[];
+    corrections?: {
+        creditAccount?: string;
+    };
 }
 
 export interface ConfirmReceiptResponse {

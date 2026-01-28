@@ -147,6 +147,33 @@ export async function confirmReceipt(
 }
 
 /**
+ * Confirm Split Receipt
+ */
+export async function confirmSplitReceipt(
+    receiptId: string,
+    lineItems: any[], // using any to match usage in OcrResultCard for now
+    creditAccount: string = '1101-Checking'
+): Promise<ConfirmReceiptResponse> {
+    const response = await apiClient.post<ConfirmReceiptResponse>(
+        `/receipts/${receiptId}/confirm`,
+        {
+            lineItems: lineItems.map(item => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                totalPrice: item.totalPrice,
+                category: item.category || item.suggestedCategory || 'PENDING_REVIEW'
+            })),
+            corrections: {
+                creditAccount
+            }
+        }
+    );
+
+    return response.data;
+}
+
+/**
  * Delete receipt
  */
 export async function deleteReceipt(receiptId: string): Promise<void> {

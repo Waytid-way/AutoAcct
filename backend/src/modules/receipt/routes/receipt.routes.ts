@@ -4,6 +4,11 @@ import { Router } from 'express';
 import multer from 'multer';
 import { ReceiptController } from '../controllers/ReceiptController';
 import { ReceiptService } from '../services/ReceiptService';
+import logger from '@/config/logger';
+import { TransactionService } from '@/modules/transaction/services/TransactionService';
+import { AccountingService } from '@/modules/accounting/services/AccountingService';
+import { GroqClassificationService } from '@/modules/ai/GroqClassificationService';
+import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetectionService';
 // Note: Auth middleware will be imported when middleware stack is built
 // import { authMiddleware } from '@/middleware/auth.middleware';
 
@@ -27,8 +32,11 @@ const router = Router();
 // Note: OcrAdapter and StorageAdapter need to be injected
 // This is a placeholder - will be updated when adapters are configured
 const receiptService = new ReceiptService(
-    {} as any, // OcrAdapter placeholder
-    {} as any  // StorageAdapter placeholder
+    logger,
+    new TransactionService(logger),
+    new AccountingService(),
+    new GroqClassificationService(process.env.GROQ_API_KEY || ''),
+    new AnomalyDetectionService()
 );
 const controller = new ReceiptController(receiptService);
 
