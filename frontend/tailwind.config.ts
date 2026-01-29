@@ -9,47 +9,64 @@ const config: Config = {
     theme: {
         extend: {
             colors: {
+                // Backgrounds (Hardcoded Hex for stability)
                 bg: {
-                    app: "rgb(var(--bg-app) / <alpha-value>)",
-                    surface: "rgb(var(--bg-surface) / <alpha-value>)",
-                    "surface-hover": "rgb(var(--bg-surface-hover) / <alpha-value>)",
-                    input: "rgb(var(--bg-input) / <alpha-value>)",
+                    app: "#0A0A0A",
+                    surface: "#141414",
+                    "surface-hover": "#1A1A1A",
+                    input: "#0F0F0F",
+                    subtle: "#1A1A1A",
                 },
+                background: {
+                    app: "#0A0A0A",
+                    surface: "#141414",
+                    subtle: "#1A1A1A",
+                },
+
+                // Borders
                 border: {
-                    subtle: "rgb(var(--border-subtle) / <alpha-value>)",
-                    default: "rgb(var(--border-default) / <alpha-value>)",
-                    active: "rgb(var(--border-active) / <alpha-value>)",
+                    subtle: "#262626",
+                    default: "#333333",
+                    active: "#404040",
                 },
+
+                // Text
                 text: {
-                    primary: "rgb(var(--text-primary) / <alpha-value>)",
-                    secondary: "rgb(var(--text-secondary) / <alpha-value>)",
-                    tertiary: "rgb(var(--text-tertiary) / <alpha-value>)",
+                    primary: "#ECECEC",
+                    secondary: "#A3A3A3",
+                    tertiary: "#737373",
                 },
+
+                // Accent - Trust Blue
                 accent: {
-                    primary: "rgb(var(--accent-primary) / <alpha-value>)",
+                    primary: "#3B82F6",
                 },
-                success: "rgb(var(--success) / <alpha-value>)",
-                warning: "rgb(var(--warning) / <alpha-value>)",
-                error: "rgb(var(--error) / <alpha-value>)",
-                info: "rgb(var(--info) / <alpha-value>)",
+
+                // Status Colors
+                status: {
+                    success: "#10B981",
+                    warning: "#F59E0B",
+                    error: "#EF4444",
+                    info: "#6366F1",
+                },
+
+                // Direct access aliases
+                success: "#10B981",
+                warning: "#F59E0B",
+                error: "#EF4444",
+                info: "#6366F1",
             },
             spacing: {
-                unit: "var(--spacing-unit)",
-                component: "var(--spacing-component)",
-                section: "var(--spacing-section)",
+                // Approximate pixel values for variables
+                unit: "8px",
+                component: "24px",
+                section: "32px",
             },
             transitionDuration: {
-                DEFAULT: "var(--transition-duration)",
+                DEFAULT: "150ms",
             },
             transitionTimingFunction: {
-                DEFAULT: "var(--transition-easing)",
-            },
-            fontSize: {
-                xs: ["0.75rem", { lineHeight: "1rem" }],     // 12px
-                sm: ["0.875rem", { lineHeight: "1.25rem" }], // 14px
-                base: ["1rem", { lineHeight: "1.5rem" }],    // 16px
-                lg: ["1.125rem", { lineHeight: "1.75rem" }], // 18px
-                xl: ["1.5rem", { lineHeight: "2rem" }],      // 24px
+                DEFAULT: "cubic-bezier(0.4, 0, 0.2, 1)",
             },
             borderRadius: {
                 DEFAULT: "12px",

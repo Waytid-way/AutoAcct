@@ -168,6 +168,9 @@ export function SplitEntryReview({
                                     className="w-full text-sm bg-bg-input rounded px-2 py-1 text-right text-text-primary"
                                     placeholder="1"
                                 />
+                                {errors.items?.[index]?.quantity && (
+                                    <span className="text-[10px] text-error block">{errors.items[index]?.quantity?.message}</span>
+                                )}
                             </div>
 
                             {/* Total Price */}
@@ -179,6 +182,9 @@ export function SplitEntryReview({
                                     {...register(`items.${index}.totalPrice` as const, { valueAsNumber: true })}
                                     className="w-full text-sm bg-bg-input rounded px-2 py-1 text-right font-mono text-text-primary"
                                 />
+                                {errors.items?.[index]?.totalPrice && (
+                                    <span className="text-[10px] text-error block">{errors.items[index]?.totalPrice?.message}</span>
+                                )}
                             </div>
 
                             {/* Delete */}
