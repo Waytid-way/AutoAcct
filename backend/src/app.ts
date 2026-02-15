@@ -3,6 +3,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
 import logger from './config/logger';
 import {
     correlationIdMiddleware,
@@ -37,13 +38,46 @@ const app = express();
 // ============================================
 // SECURITY MIDDLEWARE (First Layer)
 // ============================================
-app.use(helmet()); // Security headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+        },
+    },
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+    },
+})); // Security headers with CSP
+
 app.use(cors({
     origin: (config.get('CORS_ORIGIN') as string)?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id'],
     exposedHeaders: ['x-correlation-id'],
+}));
+
+// Prevent NoSQL injection
+app.use(mongoSanitize({
+    replaceWith: '_',
+    onSanitize: ({ req, key }) => {
+        logger.warn({
+            action: 'nosql_sanitization',
+            key,
+            ip: req.ip,
+            path: req.path,
+        });
+    },
 }));
 
 // ============================================

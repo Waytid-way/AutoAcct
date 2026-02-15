@@ -15,6 +15,7 @@ import {
 } from '@/shared/errors';
 import logger from '@/config/logger';
 import { Logger } from 'winston';
+import { sanitizeFileName, sanitizeText, validateFileType, validateFileSize } from '@/shared/utils/sanitization';
 import type {
   QueueQueryInput,
   FeedbackInput,
@@ -73,10 +74,24 @@ export class ReceiptService {
     correlationId: string,
     userId?: string
   ): Promise<IReceipt> {
+    // Validate and sanitize inputs
+    const sanitizedFileName = sanitizeFileName(fileName);
+    
+    // Validate file type
+    if (!validateFileType(mimeType)) {
+      throw new ValidationError(`Invalid file type: ${mimeType}. Allowed: JPEG, PNG, PDF`);
+    }
+    
+    // Validate file size (10MB max)
+    if (!validateFileSize(file.length, 10)) {
+      throw new ValidationError('File too large. Maximum size is 10MB');
+    }
+
     this.logger.info({
       action: 'upload_receipt_start',
       correlationId,
-      fileName,
+      fileName: sanitizedFileName,
+      originalFileName: fileName,
       clientId,
       fileSize: file.length,
     });
@@ -95,7 +110,7 @@ export class ReceiptService {
 
     // Step 3: Save to database
     const receipt = await this.saveReceipt({
-      fileName,
+      fileName: sanitizedFileName,
       fileHash,
       mimeType,
       fileSizeBytes: file.length,
@@ -273,7 +288,7 @@ export class ReceiptService {
     }
 
     if (feedback.corrections?.vendor !== undefined) {
-      feedbackData.vendorCorrected = feedback.corrections.vendor;
+      feedbackData.vendorCorrected = sanitizeText(feedback.corrections.vendor);
     }
     if (feedback.corrections?.amount !== undefined) {
       feedbackData.amountSatangCorrected = feedback.corrections.amount;
@@ -282,10 +297,10 @@ export class ReceiptService {
       feedbackData.dateCorrected = feedback.corrections.date;
     }
     if (feedback.corrections?.category !== undefined) {
-      feedbackData.categoryCorrected = feedback.corrections.category;
+      feedbackData.categoryCorrected = sanitizeText(feedback.corrections.category);
     }
     if (feedback.notes !== undefined) {
-      feedbackData.reason = feedback.notes;
+      feedbackData.reason = sanitizeText(feedback.notes);
     }
 
     receipt.feedback = feedbackData;
@@ -341,22 +356,30 @@ export class ReceiptService {
       confidence: ocrResult.confidence.overall,
     });
 
+    // Sanitize OCR results to prevent XSS
+    const sanitizedOcrResult = {
+      ...ocrResult,
+      ocrText: ocrResult.ocrText ? sanitizeText(ocrResult.ocrText) : undefined,
+      vendor: ocrResult.vendor ? sanitizeText(ocrResult.vendor) : undefined,
+      taxId: ocrResult.taxId ? sanitizeText(ocrResult.taxId) : undefined,
+    };
+
     // Step 1: Get receipt
     const receipt = await this.getById(receiptId, clientId, correlationId);
 
-    // Step 2: Update with OCR data
-    receipt.ocrText = ocrResult.ocrText;
-    receipt.ocrEngine = ocrResult.ocrEngine || 'paddleocr';
+    // Step 2: Update with OCR data (using sanitized results)
+    receipt.ocrText = sanitizedOcrResult.ocrText;
+    receipt.ocrEngine = sanitizedOcrResult.ocrEngine || 'paddleocr';
     receipt.ocrProcessedAt = new Date();
 
     receipt.extractedFields = {
-      vendor: ocrResult.vendor,
-      amountSatang: ocrResult.amountSatang,
-      issueDate: ocrResult.issueDate,
-      taxId: ocrResult.taxId,
+      vendor: sanitizedOcrResult.vendor,
+      amountSatang: sanitizedOcrResult.amountSatang,
+      issueDate: sanitizedOcrResult.issueDate,
+      taxId: sanitizedOcrResult.taxId,
     };
 
-    receipt.confidenceScores = ocrResult.confidence;
+    receipt.confidenceScores = sanitizedOcrResult.confidence;
 
     // Step 3: Mark as processed (or manual review if low confidence)
     receipt.markProcessed();
