@@ -10,6 +10,10 @@ import {
     requestLoggerMiddleware,
     notFoundMiddleware,
     globalErrorHandler,
+    globalLimiter,
+    authLimiter,
+    uploadLimiter,
+    ocrLimiter,
 } from './shared/middleware';
 import config from './config/ConfigManager';
 
@@ -95,21 +99,121 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ============================================
-// HEALTH CHECK (No auth required)
+// HEALTH CHECKS (No auth required)
 // ============================================
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
+import mongoose from 'mongoose';
+
+// Liveness probe - is the app running?
+// Kubernetes uses this to know if the pod should be restarted
+app.get('/health/live', (req, res) => {
+    res.status(200).json({
+        status: 'alive',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+    });
+});
+
+// Readiness probe - is the app ready to serve traffic?
+// Kubernetes uses this to know when to route traffic to the pod
+app.get('/health/ready', async (req, res) => {
+    const checks: Record<string, boolean> = {
+        server: true,
+        database: false,
+    };
+
+    // Check MongoDB connection
+    try {
+        checks.database = mongoose.connection.readyState === 1;
+    } catch (error) {
+        checks.database = false;
+    }
+
+    // Check if OCR worker is running (optional)
+    // checks.ocrWorker = ocrWorker.isRunning();
+
+    const isReady = Object.values(checks).every(Boolean);
+
+    if (isReady) {
+        res.status(200).json({
+            status: 'ready',
+            timestamp: new Date().toISOString(),
+            checks,
+        });
+    } else {
+        logger.warn({
+            action: 'health_check_not_ready',
+            checks,
+        });
+        res.status(503).json({
+            status: 'not ready',
+            timestamp: new Date().toISOString(),
+            checks,
+        });
+    }
+});
+
+// General health check - detailed status
+app.get('/health', async (req, res) => {
+    const checks: Record<string, { status: string; responseTime?: number }> = {
+        server: { status: 'healthy' },
+    };
+
+    // Check MongoDB
+    const dbStart = Date.now();
+    try {
+        if (mongoose.connection.readyState === 1) {
+            await mongoose.connection.db?.admin().ping();
+            checks.database = {
+                status: 'connected',
+                responseTime: Date.now() - dbStart,
+            };
+        } else {
+            checks.database = { status: 'disconnected' };
+        }
+    } catch (error) {
+        checks.database = { status: 'error' };
+    }
+
+    // Memory usage
+    const memUsage = process.memoryUsage();
+
+    const isHealthy = Object.values(checks).every(
+        (check) => check.status === 'healthy' || check.status === 'connected'
+    );
+
+    const response = {
+        status: isHealthy ? 'healthy' : 'degraded',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         environment: config.get('NODE_ENV'),
-    });
+        version: process.env.npm_package_version || '1.0.0',
+        checks,
+        memory: {
+            used: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+            total: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
+        },
+    };
+
+    res.status(isHealthy ? 200 : 503).json(response);
 });
 
 // ============================================
 // API ROUTES (Auth applied per-route)
 // ============================================
+
+// Apply global rate limiting to all API routes
+app.use('/api/', globalLimiter);
+
+// Auth routes - stricter rate limiting for login attempts
+// Note: These should be defined before other routes if they exist
+// app.use('/api/auth/login', authLimiter);
+
+// Receipt routes - with upload rate limiting
+app.use('/api/receipts/upload', uploadLimiter);
 app.use('/api/receipts', receiptRoutes);
+
+// OCR routes - expensive operations, use OCR limiter
+// Note: Apply to specific OCR endpoints
 app.use('/api/anomalies', anomalyRoutes);
 app.use('/api/transactions', transactionRoutes);
 // app.use('/api/journals', journalRoutes);          // Task 3

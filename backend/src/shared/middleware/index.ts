@@ -19,3 +19,4 @@ export * from './requestLogger.middleware';
 export * from './auth.middleware';
 export * from './globalErrorHandler';
 export * from './notFound.middleware';
+export * from './rateLimit';
