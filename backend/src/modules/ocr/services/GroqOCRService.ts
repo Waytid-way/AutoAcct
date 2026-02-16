@@ -9,8 +9,18 @@ import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
 
 /**
+ * Dependencies interface for GroqOCRService
+ */
+export interface GroqOCRServiceDependencies {
+    groqClient: Groq;
+    promptService: GroqPromptService;
+    scorer: ConfidenceScorer;
+    model?: string;
+}
+
+/**
  * GROQ OCR SERVICE
- * 
+ *
  * Orchestrates the full AI OCR Pipeline:
  * 1. Groq Vision API (Image -> Raw Text)
  * 2. Groq Prompt Service (Raw Text -> Structured Data)
@@ -25,11 +35,23 @@ export class GroqOCRService {
     // Circuit Breaker / Retry State managed via simple internal logic or external wrapper.
     // We'll implement basic retry here for the API calls.
 
-    constructor(apiKey: string) {
-        this.groqClient = new Groq({ apiKey });
-        this.promptService = new GroqPromptService(apiKey);
-        this.scorer = new ConfidenceScorer();
-        this.model = config.get('GROQ_MODEL') || 'llama-3.2-90b-vision-preview'; // Default to a vision model
+    constructor(dependencies: GroqOCRServiceDependencies) {
+        this.groqClient = dependencies.groqClient;
+        this.promptService = dependencies.promptService;
+        this.scorer = dependencies.scorer;
+        this.model = dependencies.model || config.get('GROQ_MODEL') || 'llama-3.2-90b-vision-preview';
+    }
+
+    /**
+     * Factory method for creating with default dependencies
+     */
+    static createWithApiKey(apiKey: string): GroqOCRService {
+        const groqClient = new Groq({ apiKey });
+        return new GroqOCRService({
+            groqClient,
+            promptService: new GroqPromptService(apiKey),
+            scorer: new ConfidenceScorer()
+        });
     }
 
     /**
@@ -139,5 +161,13 @@ export class GroqOCRService {
         } catch (err: any) {
             throw new ExternalServiceError('GroqVisionAPI', `Vision extraction failed: ${err.message}`, 502);
         }
+    }
+
+    /**
+     * Check if mime type is supported
+     */
+    supportsMimeType(mimeType: string): boolean {
+        const supportedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+        return supportedTypes.includes(mimeType);
     }
 }

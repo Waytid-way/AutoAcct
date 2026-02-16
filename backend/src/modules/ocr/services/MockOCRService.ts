@@ -1,16 +1,16 @@
 // backend/src/modules/ocr/services/MockOCRService.ts
 
 import { OCRResult } from '../types/ocr.types';
-import { ExternalServiceError } from '@/shared/errors';
 import logger from '@/config/logger';
+import { IOcrService } from '@/shared/di/interfaces';
 
 /**
  * MOCK OCR SERVICE
- * 
+ *
  * For Development/Testing.
  * Returns static data simulating a successful OCR scan.
  */
-export class MockOCRService {
+export class MockOCRService implements IOcrService {
     async processImage(
         imageUrl: string,
         correlationId: string
@@ -39,5 +39,10 @@ export class MockOCRService {
             },
             extractionDuration: 1000
         };
+    }
+
+    supportsMimeType(mimeType: string): boolean {
+        const supportedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+        return supportedTypes.includes(mimeType);
     }
 }

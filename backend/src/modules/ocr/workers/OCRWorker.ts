@@ -10,6 +10,17 @@ import logger from '@/config/logger';
 import { WorkflowService } from '../../workflow/services/WorkflowService';
 import { container, TOKENS } from '@/shared/di/container';
 import { ILogger, IGroqClassificationService } from '@/shared/di/interfaces';
+import { IOcrService } from '@/shared/di/interfaces';
+
+/**
+ * Dependencies interface for OCRWorker
+ */
+export interface OCRWorkerDependencies {
+    integrationService: OCRIntegrationService;
+    workflowService: WorkflowService;
+    ocrService: IOcrService;
+    classificationService?: IGroqClassificationService;
+}
 
 /**
  * OCR WORKER
@@ -22,28 +33,48 @@ import { GroqClassificationService } from '../../ai/GroqClassificationService';
 
 export class OCRWorker {
     private integrationService: OCRIntegrationService;
-    private ocrService: GroqOCRService | MockOCRService;
-    private classificationService: IGroqClassificationService | undefined; // Task 3E
+    private ocrService: IOcrService;
+    private classificationService: IGroqClassificationService | undefined;
     private workflowService: WorkflowService;
 
-    constructor() {
-        this.integrationService = new OCRIntegrationService();
-        this.workflowService = new WorkflowService(container.resolve<ILogger>(TOKENS.Logger));
+    constructor(dependencies: OCRWorkerDependencies) {
+        this.integrationService = dependencies.integrationService;
+        this.workflowService = dependencies.workflowService;
+        this.ocrService = dependencies.ocrService;
+        this.classificationService = dependencies.classificationService;
+    }
+
+    /**
+     * Factory method to create OCRWorker with configured dependencies
+     */
+    static create(): OCRWorker {
+        const integrationService = new OCRIntegrationService();
+        const workflowService = WorkflowService.create(container.resolve<ILogger>(TOKENS.Logger));
 
         // Factory Logic for Processor
+        let ocrService: IOcrService;
+        let classificationService: IGroqClassificationService | undefined;
+
         if (config.get('OCR_SERVICE_MODE') === 'mock' || !config.isProduction()) {
-            this.ocrService = new MockOCRService();
+            ocrService = new MockOCRService();
             logger.info({ action: 'ocr_worker_init', mode: 'MOCK' });
         } else {
             const apiKey = config.get('GROQ_API_KEY');
             if (!apiKey) throw new Error('GROQ_API_KEY required for production OCR');
-            this.ocrService = new GroqOCRService(apiKey);
-            this.classificationService = new GroqClassificationService(
+            ocrService = GroqOCRService.createWithApiKey(apiKey);
+            classificationService = new GroqClassificationService(
                 container.resolve<ILogger>(TOKENS.Logger),
                 apiKey
-            ); // Task 3E
+            );
             logger.info({ action: 'ocr_worker_init', mode: 'GROQ_PRODUCTION' });
         }
+
+        return new OCRWorker({
+            integrationService,
+            workflowService,
+            ocrService,
+            classificationService
+        });
     }
 
     /**
@@ -74,10 +105,19 @@ export class OCRWorker {
                 const result = await this.ocrService.processImage(imageUrl, correlationId);
 
                 // 3. Classify Line Items (Task 3E)
-                let classifiedItems: any[] = [];
-                if (result.lineItems && result.lineItems.length > 0 && this.classificationService) {
+                interface LineItem {
+                    description: string;
+                    quantity: number;
+                    unitPrice: number;
+                    totalPrice: number;
+                    suggestedCategory: string;
+                    aiConfidence: number;
+                }
+                let classifiedItems: LineItem[] = [];
+                const resultWithLineItems = result as { lineItems?: Array<{ description: string; quantity: number; unitPrice: number; totalPrice: number }> };
+                if (resultWithLineItems.lineItems && resultWithLineItems.lineItems.length > 0 && this.classificationService) {
                     // Convert line items to MoneyInt format expected by classification service
-                    const itemsForClassification = result.lineItems.map(item => ({
+                    const itemsForClassification = resultWithLineItems.lineItems.map(item => ({
                         description: item.description,
                         quantity: item.quantity,
                         totalPrice: item.totalPrice as unknown as import('@/utils/money').MoneyInt
@@ -88,7 +128,7 @@ export class OCRWorker {
                     );
 
                     // Merge classification with extracted data
-                    classifiedItems = result.lineItems.map((item, idx) => ({
+                    classifiedItems = resultWithLineItems.lineItems.map((item, idx) => ({
                         description: item.description,
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
@@ -102,8 +142,8 @@ export class OCRWorker {
                 const updatedReceipt = await Receipt.findOneAndUpdate({ _id: receiptId }, {
                     ocrStatus: 'complete',
                     ocrResult: result,
-                    ocrConfidence: result.confidenceScores?.overall || 0,
-                    lineItems: classifiedItems, // Structurally compatible
+                    ocrConfidence: 'confidenceScores' in result ? result.confidenceScores?.overall || 0 : 0,
+                    lineItems: classifiedItems,
                     splitTransactionEnabled: classifiedItems.length > 0,
                     updatedAt: new Date()
                 }, { new: true });
@@ -122,11 +162,12 @@ export class OCRWorker {
                 if (config.get('WORKFLOW_AUTO_TRIGGER')) {
                     try {
                         await this.workflowService.onOCRComplete(updatedReceipt, correlationId);
-                    } catch (wfErr: any) {
+                    } catch (wfErr: unknown) {
+                        const errorMessage = wfErr instanceof Error ? wfErr.message : 'Unknown error';
                         logger.error({
                             action: 'workflow_trigger_failed',
                             correlationId,
-                            error: wfErr.message
+                            error: errorMessage
                         });
                         // Don't fail the job if workflow fails (OCR itself succeeded)
                     }
@@ -134,19 +175,20 @@ export class OCRWorker {
 
                 return result;
 
-            } catch (err: any) {
+            } catch (err: unknown) {
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
                 logger.error({
                     action: 'ocr_job_failed',
                     jobId: job.id,
                     receiptId,
-                    error: err.message,
+                    error: errorMessage,
                     correlationId
                 });
 
                 // Update DB Status
                 await Receipt.updateOne({ _id: receiptId }, {
                     ocrStatus: 'failed',
-                    $push: { ocrErrors: err.message },
+                    $push: { ocrErrors: errorMessage },
                     updatedAt: new Date()
                 });
 

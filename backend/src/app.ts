@@ -231,7 +231,7 @@ app.use(globalErrorHandler);
 // Initialize Workers
 import { OCRWorker } from '@/modules/ocr/workers/OCRWorker';
 try {
-    const ocrWorker = new OCRWorker();
+    const ocrWorker = OCRWorker.create();
     ocrWorker.start();
 } catch (e) {
     logger.warn('Failed to start OCR Worker (Redis might be missing): ' + e);

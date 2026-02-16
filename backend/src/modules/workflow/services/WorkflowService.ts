@@ -7,8 +7,16 @@ import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
 import { TeableService } from '../../teable/adapters/TeableService';
 import { MockTeableService } from '../../teable/adapters/MockTeableService';
-import { container, TOKENS } from '@/shared/di/container';
 import { ITransactionService, ILogger } from '@/shared/di/interfaces';
+
+/**
+ * Dependencies interface for WorkflowService
+ */
+export interface WorkflowServiceDependencies {
+    logger: ILogger;
+    teableService: ITeableService;
+    transactionService: ITransactionService;
+}
 
 /**
  * WORKFLOW SERVICE - Event Orchestrator
@@ -22,11 +30,23 @@ import { ITransactionService, ILogger } from '@/shared/di/interfaces';
 export class WorkflowService {
     private teableService: ITeableService;
     private transactionService: ITransactionService;
+    private logger: ILogger;
 
-    constructor(private logger: ILogger) {
+    constructor(dependencies: WorkflowServiceDependencies) {
+        this.logger = dependencies.logger;
+        this.teableService = dependencies.teableService;
+        this.transactionService = dependencies.transactionService;
+    }
+
+    /**
+     * Factory method to create WorkflowService with configured dependencies
+     */
+    static create(logger: ILogger): WorkflowService {
         // Teable Factory Logic
+        let teableService: ITeableService;
+
         if (config.get('TEABLE_SERVICE_MODE') === 'mock' || !config.isProduction()) {
-            this.teableService = new MockTeableService();
+            teableService = new MockTeableService();
             logger.info({ action: 'workflow_init', mode: 'MOCK_TEABLE' });
         } else {
             const apiKey = config.get('TEABLE_API_KEY');
@@ -34,7 +54,7 @@ export class WorkflowService {
             const tableId = config.get('TEABLE_RECEIPT_TABLE_ID');
             if (!apiKey || !baseId) throw new Error('Teable Config Missing');
 
-            this.teableService = new TeableService(
+            teableService = new TeableService(
                 config.get('TEABLE_API_URL'),
                 apiKey,
                 baseId,
@@ -43,7 +63,16 @@ export class WorkflowService {
             logger.info({ action: 'workflow_init', mode: 'PROD_TEABLE' });
         }
 
-        this.transactionService = container.resolve<ITransactionService>(TOKENS.TransactionService);
+        // Import container here to avoid circular dependency
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { container: wfContainer, TOKENS: wfTokens } = require('@/shared/di/container') as { container: typeof import('@/shared/di/container').container; TOKENS: typeof import('@/shared/di/container').TOKENS };
+        const transactionService = wfContainer.resolve<ITransactionService>(wfTokens.TransactionService);
+
+        return new WorkflowService({
+            logger,
+            teableService,
+            transactionService
+        });
     }
 
     /**
@@ -109,17 +138,18 @@ export class WorkflowService {
 
             return { teableId: teableResult.id, transactionId: txResult.id };
 
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             logger.error({
                 action: 'workflow_failed',
                 correlationId,
-                error: error.message
+                error: errorMessage
             });
 
             // Update status
             await Receipt.findByIdAndUpdate(receipt._id, {
                 workflowStatus: 'failed',
-                workflowError: error.message,
+                workflowError: errorMessage,
                 workflowFailedAt: new Date()
             });
 

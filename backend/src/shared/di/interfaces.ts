@@ -382,11 +382,39 @@ export interface IStorageAdapter {
 
 export interface IOcrService {
     processImage(
-        imageBuffer: Buffer,
+        imageSource: string | Buffer,
         correlationId: string
-    ): Promise<IOcrResult>;
+    ): Promise<import('@/modules/ocr/types/ocr.types').OCRResult>;
 
     supportsMimeType(mimeType: string): boolean;
+}
+
+// ==================== OCR Worker Service ====================
+
+export interface IOcrWorker {
+    start(): void;
+    stop(): Promise<void>;
+}
+
+// ==================== OCR Integration Service ====================
+
+export interface IOCRIntegrationService {
+    extractFromImage(
+        receiptId: string,
+        fileBuffer: Buffer,
+        mimeType: string,
+        correlationId: string
+    ): Promise<{ jobId: string }>;
+    getQueue(): unknown;
+}
+
+// ==================== Workflow Service ====================
+
+export interface IWorkflowService {
+    onOCRComplete(
+        receipt: IReceipt,
+        correlationId: string
+    ): Promise<{ teableId: string; transactionId: string }>;
 }
 
 // ==================== Statistical Analysis Service ====================
