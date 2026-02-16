@@ -21,15 +21,14 @@ import { FinancialIntegrityError, NotFoundError } from '@/utils/errors';
 jest.mock('@/modules/transaction/models/Transaction.model');
 jest.mock('@/models/Receipt.model');
 jest.mock('@/modules/ledger/adapters/MediciAdapter');
-jest.mock('@/config/logger', () => ({
-    __esModule: true,
-    default: {
-        info: jest.fn(),
-        debug: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-    },
-}));
+
+// Mock logger
+const mockLogger = {
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+};
 
 describe('Trial Balance - Double-Entry Integrity', () => {
     let medicerService: MedicerService;
@@ -41,20 +40,15 @@ describe('Trial Balance - Double-Entry Integrity', () => {
 
     describe('Debits = Credits Principle', () => {
         test('single transaction: debit equals credit', async () => {
-            // Mock a balanced transaction
-            const mockTransaction = {
-                _id: 'txn-1',
-                account: { debit: '5100-Food', credit: '1100-Cash' },
-                debit: 10000, // 100.00 Baht
-                credit: 10000,
-                clientId: 'client-123',
-                status: 'posted',
-            };
-
-            (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([
-                { _id: 'debit', totalAmount: 10000 },
-                { _id: 'credit', totalAmount: 10000 },
-            ]);
+            // Mock getTrialBalance to return balanced result
+            (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+                accounts: [
+                    { account: '5100-Food', debit: 10000, credit: 0, balance: 10000 },
+                    { account: '1100-Cash', debit: 0, credit: 10000, balance: -10000 },
+                ],
+                totalDebit: 10000,
+                totalCredit: 10000,
+            });
 
             const balance = await medicerService.getTrialBalance('client-123');
             expect(balance).toBe(0); // Balanced
@@ -62,10 +56,11 @@ describe('Trial Balance - Double-Entry Integrity', () => {
 
         test('multiple transactions: sum(debits) = sum(credits)', async () => {
             // Multiple transactions
-            (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([
-                { _id: 'debit', totalAmount: 50000 }, // Multiple debits
-                { _id: 'credit', totalAmount: 50000 }, // Multiple credits
-            ]);
+            (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+                accounts: [],
+                totalDebit: 50000,
+                totalCredit: 50000,
+            });
 
             const balance = await medicerService.getTrialBalance('client-123');
             expect(balance).toBe(0); // Balanced
@@ -73,17 +68,22 @@ describe('Trial Balance - Double-Entry Integrity', () => {
 
         test('unbalanced transactions return non-zero balance', async () => {
             // Data corruption scenario
-            (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([
-                { _id: 'debit', totalAmount: 50000 },
-                { _id: 'credit', totalAmount: 49900 }, // Missing 100 satang
-            ]);
+            (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+                accounts: [],
+                totalDebit: 50000,
+                totalCredit: 49900, // Missing 100 satang
+            });
 
             const balance = await medicerService.getTrialBalance('client-123');
             expect(balance).toBe(100); // Imbalanced by 1 Baht
         });
 
         test('empty transaction set is balanced', async () => {
-            (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([]);
+            (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+                accounts: [],
+                totalDebit: 0,
+                totalCredit: 0,
+            });
 
             const balance = await medicerService.getTrialBalance('client-123');
             expect(balance).toBe(0); // Empty = balanced
@@ -261,7 +261,7 @@ describe('Trial Balance - Trial Balance Report', () => {
         const mockReport = [
             { account: '1100-Cash', debit: 50000, credit: 20000 },
             { account: '1200-Inventory', debit: 100000, credit: 0 },
-            { account: '2100-Payables', debit: 0, credit: 30000 },
+            { account: '2100-Payables', debit: 0, credit: 105000 },
             { account: '5100-Food', debit: 5000, credit: 0 },
         ];
 
@@ -275,7 +275,7 @@ describe('Trial Balance - Trial Balance Report', () => {
         const mockReport = [
             { account: '1100-Cash', debit: 50000, credit: 20000 },
             { account: '1200-Inventory', debit: 100000, credit: 0 },
-            { account: '2100-Payables', debit: 0, credit: 30000 },
+            { account: '2100-Payables', debit: 0, credit: 105000 },
             { account: '5100-Food', debit: 5000, credit: 0 },
         ];
 
@@ -293,22 +293,27 @@ describe('Trial Balance - Edge Cases', () => {
 
     beforeEach(() => {
         medicerService = new MedicerService();
-        accountingService = new AccountingService(medicerService);
+        accountingService = new AccountingService(mockLogger as any, medicerService);
         jest.clearAllMocks();
     });
 
     test('empty period (no transactions) returns balanced', async () => {
-        (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([]);
+        (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+            accounts: [],
+            totalDebit: 0,
+            totalCredit: 0,
+        });
 
         const balance = await medicerService.getTrialBalance('client-123');
         expect(balance).toBe(0);
     });
 
     test('single transaction period', async () => {
-        (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([
-            { _id: 'debit', totalAmount: 10000 },
-            { _id: 'credit', totalAmount: 10000 },
-        ]);
+        (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+            accounts: [],
+            totalDebit: 10000,
+            totalCredit: 10000,
+        });
 
         const balance = await medicerService.getTrialBalance('client-123');
         expect(balance).toBe(0);
@@ -319,10 +324,11 @@ describe('Trial Balance - Edge Cases', () => {
         const largeDebitTotal = 9999999999; // Very large amount
         const largeCreditTotal = 9999999999;
 
-        (Transaction.aggregate as jest.Mock).mockResolvedValueOnce([
-            { _id: 'debit', totalAmount: largeDebitTotal },
-            { _id: 'credit', totalAmount: largeCreditTotal },
-        ]);
+        (Transaction.getTrialBalance as jest.Mock).mockResolvedValueOnce({
+            accounts: [],
+            totalDebit: largeDebitTotal,
+            totalCredit: largeCreditTotal,
+        });
 
         const balance = await medicerService.getTrialBalance('client-123');
         expect(balance).toBe(0);

@@ -3,6 +3,8 @@
  * Run before each test file
  */
 
+/// <reference types="@types/jest" />
+
 // Set test environment variables
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-key-min-32-chars-long';

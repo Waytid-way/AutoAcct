@@ -15,15 +15,34 @@ import { DuplicateReceiptError } from '@/shared/errors';
 
 // Mock the Receipt model
 jest.mock('@/models/Receipt.model');
-jest.mock('@/config/logger', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
+
+// Mock dependencies
+const mockLogger = {
+  info: jest.fn(),
+  debug: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
+
+const mockTransactionService = {
+  createDraftTransaction: jest.fn(),
+  confirmTransaction: jest.fn(),
+  getTransactionByReceiptId: jest.fn(),
+};
+
+const mockAccountingService = {
+  calculateSplit: jest.fn(),
+  validateAccounts: jest.fn(),
+  getAccountBalance: jest.fn(),
+};
+
+const mockGroqService = {
+  classifyTransaction: jest.fn(),
+};
+
+const mockAnomalyService = {
+  analyzeTransaction: jest.fn(),
+};
 
 describe('Receipt Deduplication - Hash Generation', () => {
   test('same data produces same hash', () => {
@@ -88,7 +107,13 @@ describe('Receipt Deduplication - Duplicate Detection', () => {
   let receiptService: ReceiptService;
 
   beforeEach(() => {
-    receiptService = new ReceiptService();
+    receiptService = new ReceiptService(
+      mockLogger as any,
+      mockTransactionService as any,
+      mockAccountingService as any,
+      mockGroqService as any,
+      mockAnomalyService as any
+    );
     jest.clearAllMocks();
   });
 
@@ -260,7 +285,13 @@ describe('Receipt Deduplication - Edge Cases', () => {
   let receiptService: ReceiptService;
 
   beforeEach(() => {
-    receiptService = new ReceiptService();
+    receiptService = new ReceiptService(
+      mockLogger as any,
+      mockTransactionService as any,
+      mockAccountingService as any,
+      mockGroqService as any,
+      mockAnomalyService as any
+    );
     jest.clearAllMocks();
   });
 

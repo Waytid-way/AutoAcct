@@ -314,9 +314,9 @@ describe('Edge Cases & Stress Tests', () => {
         amount = money.add(amount, 50000 as MoneyInt); // + 500 = 1500
         amount = money.subtract(amount, 20000 as MoneyInt); // - 200 = 1300
         amount = money.multiply(amount, 1.1); // × 1.1 = 1430 (143000)
-        const split = plugSplit(amount, 3); // ÷ 3 = [47667, 47666, 47667]
+        const split = plugSplit(amount, 3); // ÷ 3 = [47668, 47666, 47666] (remainder 2 added to first)
         
-        expect(split).toEqual([47667, 47666, 47667]);
+        expect(split).toEqual([47668, 47666, 47666]);
         expect(split.reduce((a, b) => a + b, 0)).toBe(143000);
     });
 });
