@@ -289,7 +289,7 @@ export interface ILedgerTransaction {
 export interface ILedgerIntegrationService {
     recordEntry(entry: ILedgerEntry, correlationId: string): Promise<ILedgerTransaction>;
     getBalance(accountPath: string, clientId: string): Promise<number>;
-    reverseEntry?(transactionId: string, correlationId: string): Promise<void>;
+    reverseEntry(journalId: string, clientId: string, correlationId: string): Promise<void>;
 }
 
 // ==================== AI/Classification Service ====================

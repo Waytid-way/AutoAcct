@@ -40,6 +40,9 @@ export interface ITransaction extends Document {
     voidedAt?: Date;
     voidReason?: string;
 
+    // Ledger Integration
+    ledgerJournalId?: string;  // Reference to external ledger entry
+
     // Timestamps
     createdAt: Date;
     updatedAt: Date;
@@ -110,6 +113,9 @@ const TransactionSchema = new Schema<ITransaction>({
     voidedBy: { type: String },
     voidedAt: { type: Date },
     voidReason: { type: String, maxlength: 500 },
+
+    // Ledger Integration
+    ledgerJournalId: { type: String, index: true },
 
     // Timestamps
     createdAt: {

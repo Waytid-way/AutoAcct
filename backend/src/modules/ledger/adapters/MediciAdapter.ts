@@ -91,6 +91,36 @@ export class MediciAdapter implements ILedgerAdapter {
         }
     }
 
+    async reverseEntry(journalId: string, clientId: string, correlationId: string): Promise<void> {
+        this.checkCircuitBreaker();
+
+        try {
+            await this.retryOperation(async () => {
+                const book = new Book(clientId);
+                await book.void(journalId);
+            });
+
+            this.resetCircuitBreaker();
+
+            logger.info({
+                action: 'medici_reverse_success',
+                correlationId,
+                journalId,
+                clientId,
+            });
+        } catch (err: any) {
+            this.recordFailure();
+            logger.error({
+                action: 'medici_reverse_failed',
+                correlationId,
+                journalId,
+                error: err.message,
+                failures: this.failures,
+            });
+            throw new ExternalServiceError('Medici Ledger', `Failed to reverse entry: ${err.message}`);
+        }
+    }
+
     // ============================================
     // RESILIENCE HELPERS
     // ============================================

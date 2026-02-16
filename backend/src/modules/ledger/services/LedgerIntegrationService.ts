@@ -55,4 +55,24 @@ export class LedgerIntegrationService implements ILedgerIntegrationService {
     async getBalance(accountPath: string, clientId: string): Promise<number> {
         return this.adapter.getBalance(accountPath, clientId);
     }
+
+    /**
+     * Reverse a previously recorded ledger entry
+     */
+    async reverseEntry(journalId: string, clientId: string, correlationId: string): Promise<void> {
+        logger.info({
+            action: 'ledger_reverse_start',
+            correlationId,
+            journalId,
+            clientId,
+        });
+
+        await this.adapter.reverseEntry(journalId, clientId, correlationId);
+
+        logger.info({
+            action: 'ledger_reverse_success',
+            correlationId,
+            journalId,
+        });
+    }
 }

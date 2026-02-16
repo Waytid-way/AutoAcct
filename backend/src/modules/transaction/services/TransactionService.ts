@@ -228,8 +228,9 @@ export class TransactionService implements ITransactionService {
       await session.commitTransaction();
 
       // 4. Shadow Post to Ledger (Integration Layer)
+      let ledgerJournalId: string | undefined;
       try {
-        await this.ledgerIntegration.recordEntry({
+        const ledgerResult = await this.ledgerIntegration.recordEntry({
           clientId,
           memo: transaction.description,
           date: transaction.date || new Date(),
@@ -243,6 +244,11 @@ export class TransactionService implements ITransactionService {
             reference: transaction.reference
           }
         }, correlationId);
+        
+        // Store ledger journal ID for potential reversal
+        ledgerJournalId = ledgerResult.id;
+        transaction.ledgerJournalId = ledgerJournalId;
+        await transaction.save({ session });
       } catch (ledgerError: unknown) {
         const errorMessage = ledgerError instanceof Error ? ledgerError.message : 'Unknown error';
         // Log but do NOT rollback approval. Eventual consistency required.
@@ -332,10 +338,33 @@ export class TransactionService implements ITransactionService {
 
       await reversal.save({ session });
 
-      // TODO: Wire Voiding to Ledger as well (create reversal entry in Medici)?
-      // For now, out of scope for Task 1 spec which focuses on recordEntry.
-      // But logically we should reverse in Medici too. 
-      // Assuming manually handled or future task.
+      // 4. Reverse Ledger Entry (if exists)
+      if (transaction.ledgerJournalId) {
+        try {
+          await this.ledgerIntegration.reverseEntry(
+            transaction.ledgerJournalId,
+            clientId,
+            correlationId
+          );
+          this.logger.info({
+            action: 'ledger_reverse_success',
+            correlationId,
+            transactionId,
+            ledgerJournalId: transaction.ledgerJournalId,
+          });
+        } catch (ledgerError: unknown) {
+          const errorMessage = ledgerError instanceof Error ? ledgerError.message : 'Unknown error';
+          // Log but do NOT rollback void. Eventual consistency required.
+          this.logger.error({
+            action: 'ledger_reverse_failed',
+            correlationId,
+            transactionId,
+            ledgerJournalId: transaction.ledgerJournalId,
+            error: errorMessage,
+            note: 'Transaction voided locally but Ledger reversal failed. Requires reconciliation.'
+          });
+        }
+      }
 
       await session.commitTransaction();
       return transaction;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import { Upload, FileImage, AlertCircle } from "lucide-react";
 import { cn, formatFileSize } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ export function ReceiptUploader({
     const [validationError, setValidationError] = useState<string | null>(null);
 
     const onDrop = useCallback(
-        (acceptedFiles: File[], rejectedFiles: any[]) => {
+        (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
             setValidationError(null);
 
             // Handle rejected files

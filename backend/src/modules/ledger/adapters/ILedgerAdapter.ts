@@ -17,6 +17,14 @@ export interface ILedgerAdapter {
     recordEntry(entry: ILedgerEntry, correlationId: string): Promise<ILedgerTransaction>;
 
     /**
+     * Reverse a previously recorded ledger entry.
+     * @param journalId The journal/transaction ID to reverse
+     * @param clientId Tenant ID
+     * @param correlationId For tracing
+     */
+    reverseEntry(journalId: string, clientId: string, correlationId: string): Promise<void>;
+
+    /**
      * Get current balance of an account.
      * @param accountPath Account name/path (e.g. "Assets:Cash")
      * @param clientId Tenant ID

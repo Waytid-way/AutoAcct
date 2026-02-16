@@ -6,6 +6,7 @@ import type {
     ConfirmReceiptRequest,
     ConfirmReceiptResponse,
     ErrorResponse,
+    LineItem,
 } from "@/types/api.types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
@@ -151,7 +152,7 @@ export async function confirmReceipt(
  */
 export async function confirmSplitReceipt(
     receiptId: string,
-    lineItems: any[], // using any to match usage in OcrResultCard for now
+    lineItems: LineItem[],
     creditAccount: string = '1101-Checking'
 ): Promise<ConfirmReceiptResponse> {
     const response = await apiClient.post<ConfirmReceiptResponse>(

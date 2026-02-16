@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 import { SplitEntryReviewCard } from "./SplitEntryReviewCard";
 import { cn, formatCurrency, formatDate, bahtToSatang } from "@/lib/utils";
-import type { ReceiptDetailResponse } from "@/types/api.types";
+import type { ReceiptDetailResponse, LineItem } from "@/types/api.types";
 
 const editFormSchema = z.object({
     vendor: z.string().min(3, "Vendor name must be at least 3 characters").max(100),
@@ -35,9 +35,17 @@ const editFormSchema = z.object({
 
 type EditFormData = z.infer<typeof editFormSchema>;
 
+export interface ConfirmReceiptData {
+    vendor: string | null;
+    amount: number | null;
+    date: string | null;
+    category?: string | null;
+    lineItems?: LineItem[];
+}
+
 export interface OcrResultCardProps {
     receipt: ReceiptDetailResponse["data"];
-    onConfirm: (data: any) => void;
+    onConfirm: (data: ConfirmReceiptData) => void;
     onReject: () => void;
     isConfirming?: boolean;
     className?: string;
@@ -78,7 +86,7 @@ export function OcrResultCard({
         setIsEditing(false);
     };
 
-    const handleSplitConfirm = (items: any[]) => {
+    const handleSplitConfirm = (items: LineItem[]) => {
         // When confirming split, we pass the items along with the main receipt data
         // We assume the main receipt totals are valid or drawn from the split totals if needed.
         // For now, we keep the main receipt data as is, but attach line items.

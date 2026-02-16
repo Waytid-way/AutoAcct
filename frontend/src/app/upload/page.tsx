@@ -12,7 +12,7 @@ import { useReceiptPolling } from "@/hooks/useReceiptPolling";
 import { confirmReceipt, deleteReceipt } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { authService, MOCK_USER } from "@/lib/auth";
-import type { ReceiptDetailResponse } from "@/types/api.types";
+import type { ReceiptDetailResponse, LineItem } from "@/types/api.types";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -176,7 +176,7 @@ function UploadPageContent() {
 
     const handleConfirm = async (
         receipt: ReceiptDetailResponse["data"],
-        data: { vendor: string; amount: number; date: string; category?: string; lineItems?: any[] }
+        data: { vendor: string; amount: number; date: string; category?: string; lineItems?: LineItem[] }
     ) => {
         try {
             await confirmReceipt(receipt.id, {

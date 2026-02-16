@@ -31,6 +31,8 @@ const splitEntrySchema = z.object({
 
 type SplitEntryForm = z.infer<typeof splitEntrySchema>;
 
+import type { LineItem } from "@/types/api.types";
+
 interface SplitEntryReviewProps {
     initialItems?: Array<{
         description: string;
@@ -41,7 +43,7 @@ interface SplitEntryReviewProps {
         aiConfidence?: number;
     }>;
     receiptTotal: number; // Satang
-    onConfirm: (items: any[]) => void;
+    onConfirm: (items: LineItem[]) => void;
     onCancel: () => void;
 }
 

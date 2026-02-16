@@ -44,4 +44,14 @@ export class MockLedgerAdapter implements ILedgerAdapter {
         });
         return 0;
     }
+
+    async reverseEntry(journalId: string, clientId: string, correlationId: string): Promise<void> {
+        logger.info({
+            action: 'mock_ledger_reverse',
+            correlationId,
+            journalId,
+            clientId,
+            message: 'MOCK: Reversed ledger entry',
+        });
+    }
 }
