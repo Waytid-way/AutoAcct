@@ -2,16 +2,27 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { SplitEntryReview } from './SplitEntryReview';
 
-// Mock UI components
+// Mock UI components - using unknown instead of any for type safety
+interface ButtonProps {
+    children: React.ReactNode;
+    onClick?: () => void;
+    [key: string]: unknown;
+}
+
+interface BadgeProps {
+    children: React.ReactNode;
+    [key: string]: unknown;
+}
+
 vi.mock('@/components/ui/Button', () => ({
-    Button: ({ children, onClick, ...props }: any) => (
+    Button: ({ children, onClick, ...props }: ButtonProps) => (
         <button onClick={onClick} {...props}>
             {children}
         </button>
     ),
 }));
 vi.mock('@/components/ui/Badge', () => ({
-    Badge: ({ children, ...props }: any) => <span {...props}>{children}</span>
+    Badge: ({ children, ...props }: BadgeProps) => <span {...props}>{children}</span>
 }));
 
 describe('SplitEntryReview Form Integration', () => {

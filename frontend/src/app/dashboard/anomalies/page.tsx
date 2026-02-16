@@ -129,7 +129,16 @@ export default function AnomalyDashboardPage() {
 }
 
 // Simple internal component for stats
-function StatCard({ title, value, icon: Icon, color, bg, isLoading }: any) {
+interface StatCardProps {
+    title: string;
+    value: number | string;
+    icon: React.ComponentType<{ className?: string }>;
+    color: string;
+    bg?: string;
+    isLoading?: boolean;
+}
+
+function StatCard({ title, value, icon: Icon, color, bg, isLoading }: StatCardProps) {
     return (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between hover:border-zinc-700 transition-colors">
             <div>

@@ -116,12 +116,18 @@ export interface ConfirmReceiptResponse {
 // Error Response
 // ============================================
 
+export interface ErrorDetails {
+    field?: string;
+    code?: string;
+    [key: string]: unknown;
+}
+
 export interface ErrorResponse {
     success: false;
     error: {
         code: string;
         message: string;
-        details?: any;
+        details?: ErrorDetails;
         stack?: string; // Dev only
     };
     meta: {
