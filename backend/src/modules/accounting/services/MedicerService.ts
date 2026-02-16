@@ -51,9 +51,9 @@ export class MedicerService implements IMedicerService {
         session?: unknown
     ): Promise<number> {
         // We use the Transaction model's static method to check balance
-        // Transaction.getTrialBalance returns { totalDebit, totalCredit, balanced }.
+        // Transaction.getTrialBalance returns { accounts, totalDebit, totalCredit }.
 
         const balance = await Transaction.getTrialBalance(clientId);
-        return balance.balanced ? 0 : (balance.totalDebit - balance.totalCredit);
+        return balance.totalDebit - balance.totalCredit;
     }
 }

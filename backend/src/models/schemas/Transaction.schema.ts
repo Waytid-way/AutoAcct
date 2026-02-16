@@ -88,6 +88,17 @@ export interface ITransaction extends Document {
   isMockData?: boolean;
 
   // ===========================
+  // VIRTUALS
+  // ===========================
+  amountBaht?: number;
+  journalEntry?: {
+    date: Date;
+    debit: { account: string; amount: number };
+    credit: { account: string; amount: number };
+    description: string;
+  };
+
+  // ===========================
   // METHODS
   // ===========================
   isBalanced(): boolean;
@@ -286,4 +297,9 @@ TransactionSchema.methods.canBeVoided = function(this: ITransaction): boolean {
   return this.status === 'posted' && !this.reversalTransactionId;
 };
 
-export default mongoose.model<ITransaction>('Transaction', TransactionSchema);
+// Export the schema for extending with statics/virtuals
+export { TransactionSchema };
+
+// Create and export the model
+const TransactionModel = mongoose.model<ITransaction>('Transaction', TransactionSchema);
+export default TransactionModel;

@@ -76,8 +76,14 @@ export class OCRWorker {
                 // 3. Classify Line Items (Task 3E)
                 let classifiedItems: any[] = [];
                 if (result.lineItems && result.lineItems.length > 0 && this.classificationService) {
+                    // Convert line items to MoneyInt format expected by classification service
+                    const itemsForClassification = result.lineItems.map(item => ({
+                        description: item.description,
+                        quantity: item.quantity,
+                        totalPrice: item.totalPrice as unknown as import('@/utils/money').MoneyInt
+                    }));
                     const classifications = await this.classificationService.classifyLineItems(
-                        result.lineItems,
+                        itemsForClassification,
                         correlationId
                     );
 

@@ -36,6 +36,7 @@ export interface IReceipt extends Document {
   // Google Drive reference (optional, if using cloud storage)
   driveFileId?: string;
   driveFileUrl?: string;
+  fileUrl?: string;                    // Generic file URL
 
   // Encryption metadata (if sensitive)
   encrypted?: boolean;
@@ -111,6 +112,10 @@ export interface IReceipt extends Document {
   // ===========================
   transactionId?: mongoose.Types.ObjectId;  // Link to Transaction after confirmation
   category?: string;                    // Groq AI classification (e.g., "Food & Beverage")
+  classification?: {
+    category?: string;
+    confidence?: number;
+  };
 
   // ===========================
   // MULTI-TENANT & AUDIT

@@ -1,10 +1,13 @@
 // backend/src/models/Transaction.model.ts
 
-import TransactionSchema, { ITransaction } from './schemas/Transaction.schema';
+import { TransactionSchema, ITransaction } from './schemas/Transaction.schema';
 import mongoose from 'mongoose';
 
 /**
  * TRANSACTION MODEL - Financial Operations
+ * 
+ * This file extends the TransactionSchema with static methods and virtuals,
+ * then creates and exports the Mongoose model.
  */
 
 // ===========================
@@ -17,28 +20,48 @@ import mongoose from 'mongoose';
  */
 TransactionSchema.statics.getTrialBalance = async function(
   clientId: string,
-  session?: mongoose.ClientSession
-): Promise<number> {
+  startDate?: Date,
+  endDate?: Date
+): Promise<{
+  accounts: Array<{
+    account: string;
+    debit: number;
+    credit: number;
+    balance: number;
+  }>;
+  totalDebit: number;
+  totalCredit: number;
+}> {
+  const matchStage: Record<string, unknown> = {
+    clientId: new mongoose.Types.ObjectId(clientId),
+    status: 'posted',
+  };
+
+  if (startDate || endDate) {
+    matchStage.transactionDate = {};
+    if (startDate) (matchStage.transactionDate as Record<string, Date>).$gte = startDate;
+    if (endDate) (matchStage.transactionDate as Record<string, Date>).$lte = endDate;
+  }
+
   const result = await this.aggregate([
-    {
-      $match: {
-        clientId: new mongoose.Types.ObjectId(clientId),
-        status: 'posted',
-      },
-    },
+    { $match: matchStage },
     {
       $group: {
         _id: null,
-        totalDebits: { $sum: '$amountSatang' },
-        totalCredits: { $sum: '$amountSatang' },
+        totalDebit: { $sum: '$amountSatang' },
+        totalCredit: { $sum: '$amountSatang' },
       },
     },
-  ]).session(session || null);
+  ]);
 
-  if (result.length === 0) return 0;
+  const totalDebit = result[0]?.totalDebit || 0;
+  const totalCredit = result[0]?.totalCredit || 0;
 
-  // In double-entry, debits = credits, so difference should be 0
-  return result[0].totalDebits - result[0].totalCredits;
+  return {
+    accounts: [], // TODO: Implement per-account breakdown when needed
+    totalDebit,
+    totalCredit,
+  };
 };
 
 /**
@@ -141,7 +164,7 @@ TransactionSchema.statics.createReversal = async function(
 /**
  * Amount in Baht (display)
  */
-TransactionSchema.virtual('amountBaht').get(function() {
+TransactionSchema.virtual('amountBaht').get(function(this: ITransaction) {
   const satangToBaht = require('@utils/money').satangToBaht;
   return satangToBaht(this.amountSatang);
 });
@@ -149,7 +172,7 @@ TransactionSchema.virtual('amountBaht').get(function() {
 /**
  * Journal entry display format
  */
-TransactionSchema.virtual('journalEntry').get(function() {
+TransactionSchema.virtual('journalEntry').get(function(this: ITransaction) {
   return {
     date: this.transactionDate,
     debit: { account: this.debitAccount, amount: this.amountBaht },
@@ -158,4 +181,6 @@ TransactionSchema.virtual('journalEntry').get(function() {
   };
 });
 
-export default mongoose.model<ITransaction>('Transaction', TransactionSchema);
+// Create and export the model
+const TransactionModel = mongoose.model<ITransaction>('Transaction', TransactionSchema);
+export default TransactionModel;

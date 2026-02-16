@@ -394,6 +394,11 @@ export class TransactionService implements ITransactionService {
     totalDebit: number;
     totalCredit: number;
   }> {
-    return Transaction.getTrialBalance(clientId, startDate, endDate);
+    const result = await Transaction.getTrialBalance(clientId, startDate, endDate);
+    return {
+      accounts: result.accounts,
+      totalDebit: result.totalDebit,
+      totalCredit: result.totalCredit
+    };
   }
 }

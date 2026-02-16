@@ -244,4 +244,9 @@ ExportLogSchema.methods.markFailed = async function(
   await this.save();
 };
 
-export default mongoose.model<IExportLog>('ExportLog', ExportLogSchema);
+// Export the schema for extending with statics/virtuals
+export { ExportLogSchema };
+
+// Create and export the model
+const ExportLogModel = mongoose.model<IExportLog>('ExportLog', ExportLogSchema);
+export default ExportLogModel;

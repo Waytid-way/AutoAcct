@@ -15,7 +15,16 @@ interface ITransactionModel extends Model<ITransaction> {
         clientId: string,
         startDate?: Date,
         endDate?: Date
-    ): Promise<{ totalDebit: number; totalCredit: number; balanced: boolean }>;
+    ): Promise<{
+        accounts: Array<{
+            account: string;
+            debit: number;
+            credit: number;
+            balance: number;
+        }>;
+        totalDebit: number;
+        totalCredit: number;
+    }>;
 
     /**
      * Count posted transactions for a client
@@ -58,14 +67,14 @@ TransactionSchema.statics.getTrialBalance = async function (
     ]);
 
     if (result.length === 0) {
-        return { totalDebit: 0, totalCredit: 0, balanced: true };
+        return { accounts: [], totalDebit: 0, totalCredit: 0 };
     }
 
     const { totalDebit, totalCredit } = result[0];
     return {
+        accounts: [], // TODO: Implement per-account breakdown
         totalDebit,
         totalCredit,
-        balanced: totalDebit === totalCredit,
     };
 };
 

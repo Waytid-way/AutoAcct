@@ -1,10 +1,13 @@
 // backend/src/models/ExportLog.model.ts
 
-import ExportLogSchema, { IExportLog } from './schemas/ExportLog.schema';
+import { ExportLogSchema, IExportLog } from './schemas/ExportLog.schema';
 import mongoose from 'mongoose';
 
 /**
  * EXPORT LOG MODEL - Enhanced with export management methods
+ * 
+ * This file extends the ExportLogSchema with query helpers, static methods,
+ * and virtuals, then creates and exports the Mongoose model.
  */
 
 // ===========================
@@ -28,20 +31,20 @@ interface IExportLogQueryHelpers {
   successfulExports(): mongoose.Query<IExportLog[], IExportLog>;
 }
 
-ExportLogSchema.query.pendingRetries = function() {
+(ExportLogSchema.query as IExportLogQueryHelpers).pendingRetries = function(this: mongoose.Query<any, any>) {
   return this.find({
     status: { $in: ['pending', 'failed'] },
     nextRetryAt: { $lte: new Date() },
   }).sort({ nextRetryAt: 1 });
 };
 
-ExportLogSchema.query.failedExports = function() {
+(ExportLogSchema.query as IExportLogQueryHelpers).failedExports = function(this: mongoose.Query<any, any>) {
   return this.find({
     status: 'failed',
   }).sort({ lastAttemptAt: -1 });
 };
 
-ExportLogSchema.query.successfulExports = function() {
+(ExportLogSchema.query as IExportLogQueryHelpers).successfulExports = function(this: mongoose.Query<any, any>) {
   return this.find({
     status: 'success',
   }).sort({ createdAt: -1 });
@@ -81,12 +84,12 @@ ExportLogSchema.statics.getExportStats = async function(
     },
   ]);
 
-  const statusMap = stats.reduce((acc, item) => {
+  const statusMap = stats.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
     acc[item._id] = item.count;
     return acc;
   }, {} as Record<string, number>);
 
-  const total = stats.reduce((sum, item) => sum + item.count, 0);
+  const total = stats.reduce((sum: number, item: { count: number }) => sum + item.count, 0);
   const success = statusMap.success || 0;
 
   return {
@@ -96,7 +99,7 @@ ExportLogSchema.statics.getExportStats = async function(
     success,
     failed: statusMap.failed || 0,
     abandoned: statusMap.abandoned || 0,
-    avgDurationMs: stats.find(s => s.avgDuration)?.avgDuration || 0,
+    avgDurationMs: stats.find((s: { avgDuration: number }) => s.avgDuration)?.avgDuration || 0,
     successRate: total > 0 ? (success / total) * 100 : 0,
   };
 };
@@ -179,7 +182,7 @@ ExportLogSchema.statics.cleanupOldExports = async function(
 /**
  * Is ready for retry?
  */
-ExportLogSchema.virtual('isReadyForRetry').get(function() {
+ExportLogSchema.virtual('isReadyForRetry').get(function(this: IExportLog) {
   return (
     (this.status === 'pending' || this.status === 'failed') &&
     (!this.nextRetryAt || this.nextRetryAt <= new Date())
@@ -189,7 +192,7 @@ ExportLogSchema.virtual('isReadyForRetry').get(function() {
 /**
  * Time until next retry (ms)
  */
-ExportLogSchema.virtual('timeUntilRetryMs').get(function() {
+ExportLogSchema.virtual('timeUntilRetryMs').get(function(this: IExportLog) {
   if (!this.nextRetryAt) return null;
   return Math.max(0, this.nextRetryAt.getTime() - Date.now());
 });
@@ -197,8 +200,10 @@ ExportLogSchema.virtual('timeUntilRetryMs').get(function() {
 /**
  * Has exceeded max retries?
  */
-ExportLogSchema.virtual('hasExceededRetries').get(function() {
+ExportLogSchema.virtual('hasExceededRetries').get(function(this: IExportLog) {
   return this.attemptCount >= this.maxRetries;
 });
 
-export default mongoose.model<IExportLog>('ExportLog', ExportLogSchema);
+// Create and export the model
+const ExportLogModel = mongoose.model<IExportLog>('ExportLog', ExportLogSchema);
+export default ExportLogModel;

@@ -1,7 +1,8 @@
 import Receipt from '../../../models/Receipt.model';
 import { Anomaly, IAnomalyContext, AnomalyType } from '../models/Anomaly';
 import { StatisticalAnalysisService } from './StatisticalAnalysisService';
-import { ILogger, IAnomalyDetectionService, IAnomalyResult, IReceipt, IStatisticalAnalysisService } from '@/shared/di/interfaces';
+import { ILogger, IAnomalyDetectionService, IAnomalyResult, IStatisticalAnalysisService } from '@/shared/di/interfaces';
+import { IReceipt } from '@/models/schemas/Receipt.schema';
 
 export interface DetectionResult {
     hasAnomaly: boolean;
@@ -146,7 +147,7 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ RULE 1: Detect duplicate receipts
      */
     private async detectDuplicates(
-        receipt: Record<string, unknown>,
+        receipt: IReceipt,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies']> {
@@ -245,7 +246,7 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ RULE 2: Detect price outliers using 3-sigma rule
      */
     private async detectPriceOutliers(
-        receipt: Record<string, unknown>,
+        receipt: IReceipt,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies']> {
@@ -317,7 +318,7 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ RULE 3: Detect new vendors (first-time appearance)
      */
     private async detectNewVendor(
-        receipt: Record<string, unknown>,
+        receipt: IReceipt,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
@@ -364,7 +365,7 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ RULE 4: Detect unusual timing (e.g., midnight transactions)
      */
     private async detectUnusualTiming(
-        receipt: Record<string, unknown>,
+        receipt: IReceipt,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
@@ -405,7 +406,7 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ RULE 5: Detect category inconsistency (vendor usually in different category)
      */
     private async detectCategoryInconsistency(
-        receipt: Record<string, unknown>,
+        receipt: IReceipt,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
@@ -522,17 +523,33 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
      * ✅ Get all pending anomalies for client
      */
     async getPendingAnomalies(
-        clientId: string,
-        limit: number = 50
-    ): Promise<Array<Record<string, unknown>>> {
+        clientId: string
+    ): Promise<Array<{
+        id: string;
+        type: string;
+        severity: string;
+        title: string;
+        message: string;
+        receiptId: string;
+        createdAt: Date;
+    }>> {
         const anomalies = await Anomaly.find({
             clientId,
             status: 'pending'
         })
             .sort({ severity: 1, detectedAt: -1 })  // Critical first, then newest
-            .limit(limit)
+            .limit(50)
             .lean();
-        return anomalies as Array<Record<string, unknown>>;
+        
+        return anomalies.map(a => ({
+            id: a._id.toString(),
+            type: a.type,
+            severity: a.severity,
+            title: a.title,
+            message: a.message,
+            receiptId: a.context?.receiptId || '',
+            createdAt: a.detectedAt
+        }));
     }
 
     /**
@@ -566,7 +583,12 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
     /**
      * ✅ Get anomaly statistics
      */
-    async getStatistics(clientId: string): Promise<Record<string, unknown>> {
+    async getStatistics(clientId: string): Promise<{
+        total: number;
+        pending: number;
+        dismissed: number;
+        byType: Record<string, number>;
+    }> {
         const stats = await Anomaly.aggregate([
             {
                 $match: { clientId }
@@ -589,6 +611,21 @@ export class AnomalyDetectionService implements IAnomalyDetectionService {
             }
         ]);
 
-        return stats[0];
+        const byStatus = stats[0].byStatus.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
+            acc[item._id] = item.count;
+            return acc;
+        }, {});
+
+        const byType = stats[0].byType.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
+            acc[item._id] = item.count;
+            return acc;
+        }, {});
+
+        return {
+            total: stats[0].total[0]?.count || 0,
+            pending: byStatus['pending'] || 0,
+            dismissed: byStatus['dismissed'] || 0,
+            byType
+        };
     }
 }

@@ -147,7 +147,7 @@ export class AccountingService implements IAccountingService {
                     session
                 );
 
-                entries.push(entry.toObject());
+                entries.push(entry.toObject() as unknown as Record<string, unknown>);
             }
 
             // ✅ Step 6: Verify trial balance

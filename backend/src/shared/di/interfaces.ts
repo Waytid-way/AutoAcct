@@ -21,10 +21,10 @@ export { IReceipt, ITransaction, IOcrResult, DetectionResult };
 // ==================== Logger Interface ====================
 
 export interface ILogger {
-    info(message: string | Record<string, unknown>): void;
-    warn(message: string | Record<string, unknown>): void;
-    error(message: string | Record<string, unknown>): void;
-    debug(message: string | Record<string, unknown>): void;
+    info(message: string | Record<string, unknown> | object): void;
+    warn(message: string | Record<string, unknown> | object): void;
+    error(message: string | Record<string, unknown> | object): void;
+    debug(message: string | Record<string, unknown> | object): void;
 }
 
 // ==================== Receipt Service ====================
@@ -280,9 +280,13 @@ export interface ILedgerEntry {
 export interface ILedgerTransaction {
     id: string;
     date: Date;
-    entries: Array<{
-        account: string;
-        amount: number;
+    memo: string;
+    voided: boolean;
+    posted: boolean;
+    transactions: Array<{
+        credit: number;
+        debit: number;
+        accounts: string;
     }>;
 }
 
@@ -334,6 +338,35 @@ export interface IAnomalyDetectionService {
         receipt: IReceipt,
         correlationId: string
     ): Promise<IAnomalyResult>;
+
+    getPendingAnomalies(
+        clientId: string
+    ): Promise<Array<{
+        id: string;
+        type: string;
+        severity: string;
+        title: string;
+        message: string;
+        receiptId: string;
+        createdAt: Date;
+    }>>;
+
+    dismissAnomaly(
+        anomalyId: string,
+        clientId: string,
+        reason: string,
+        dismissedBy: string,
+        correlationId: string
+    ): Promise<void>;
+
+    getStatistics(
+        clientId: string
+    ): Promise<{
+        total: number;
+        pending: number;
+        dismissed: number;
+        byType: Record<string, number>;
+    }>;
 }
 
 // ==================== Storage Adapter ====================

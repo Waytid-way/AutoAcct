@@ -1,6 +1,8 @@
 // backend/src/modules/export/services/ExportService.ts
 
-import { Transaction, ExportLog, IExportLog } from '@models';
+import Transaction from '@/models/Transaction.model';
+import ExportLog from '@/models/ExportLog.model';
+import { IExportLog } from '@/models/schemas/ExportLog.schema';
 import { IAccountingAdapter } from '@adapters/interfaces/IAccountingAdapter';
 import logger from '@config/logger';
 import { v4 as uuidv4 } from 'uuid';

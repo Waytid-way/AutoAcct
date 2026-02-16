@@ -6,8 +6,8 @@
  */
 
 import rateLimit from 'express-rate-limit';
-import config from '../config/ConfigManager';
-import logger from '../config/logger';
+import config from '@/config/ConfigManager';
+import logger from '@/config/logger';
 
 /**
  * Global rate limiter - applies to all API routes
