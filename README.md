@@ -40,13 +40,47 @@ npm run dev
 # App running at http://localhost:3000
 ```
 
+## 📦 Deployment
+
+### Local Deployment (Docker)
+```bash
+# Run with Docker Compose (includes MongoDB and Redis)
+export GROQ_API_KEY=your_key_here
+./deploy-local.sh
+
+# Services will be available at:
+# - Frontend: http://localhost:3000
+# - Backend:  http://localhost:3001
+```
+
+### Production Deployment
+```bash
+# Backend (Fly.io)
+export FLY_API_TOKEN=your_token
+./deploy-backend.sh
+
+# Frontend (Vercel)
+export VERCEL_TOKEN=your_token
+./deploy-frontend.sh
+
+# Health Check
+./deploy-monitor.sh
+```
+
+### CI/CD Setup
+```bash
+# Configure GitHub Actions
+./setup-cicd.sh
+```
+
 ## 📚 Documentation
 -   [Frontend Documentation](frontend/README.md)
 -   [Backend Documentation](backend/README.md)
 
 ## 🔐 Security
 -   All financial data is processed locally or via secure APIs.
--   Mock Authentication (Phase 1/2) - Ready for JWT integration.
+-   JWT Authentication ready (Phase 2)
+-   Environment-based configuration for secrets
 
 ## 📜 License
 Proprietary - AutoAcct Project
