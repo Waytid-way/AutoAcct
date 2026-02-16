@@ -43,22 +43,66 @@ TransactionSchema.statics.getTrialBalance = async function(
     if (endDate) (matchStage.transactionDate as Record<string, Date>).$lte = endDate;
   }
 
-  const result = await this.aggregate([
+  // Get per-account breakdown for debit accounts
+  const debitAccounts = await this.aggregate([
     { $match: matchStage },
     {
       $group: {
-        _id: null,
-        totalDebit: { $sum: '$amountSatang' },
-        totalCredit: { $sum: '$amountSatang' },
+        _id: '$debitAccount',
+        amount: { $sum: '$amountSatang' },
       },
     },
   ]);
 
-  const totalDebit = result[0]?.totalDebit || 0;
-  const totalCredit = result[0]?.totalCredit || 0;
+  // Get per-account breakdown for credit accounts
+  const creditAccounts = await this.aggregate([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: '$creditAccount',
+        amount: { $sum: '$amountSatang' },
+      },
+    },
+  ]);
+
+  // Combine into account breakdown
+  const accountMap = new Map<string, { account: string; debit: number; credit: number }>();
+
+  debitAccounts.forEach((acc) => {
+    if (acc._id) {
+      accountMap.set(acc._id, {
+        account: acc._id,
+        debit: acc.amount,
+        credit: 0,
+      });
+    }
+  });
+
+  creditAccounts.forEach((acc) => {
+    if (acc._id) {
+      const existing = accountMap.get(acc._id);
+      if (existing) {
+        existing.credit = acc.amount;
+      } else {
+        accountMap.set(acc._id, {
+          account: acc._id,
+          debit: 0,
+          credit: acc.amount,
+        });
+      }
+    }
+  });
+
+  const accounts = Array.from(accountMap.values()).map((acc) => ({
+    ...acc,
+    balance: acc.debit - acc.credit,
+  }));
+
+  const totalDebit = accounts.reduce((sum, acc) => sum + acc.debit, 0);
+  const totalCredit = accounts.reduce((sum, acc) => sum + acc.credit, 0);
 
   return {
-    accounts: [], // TODO: Implement per-account breakdown when needed
+    accounts,
     totalDebit,
     totalCredit,
   };

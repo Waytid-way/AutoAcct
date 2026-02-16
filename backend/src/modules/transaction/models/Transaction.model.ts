@@ -55,24 +55,67 @@ TransactionSchema.statics.getTrialBalance = async function (
         if (endDate) filter.date.$lte = endDate;
     }
 
-    const result = await this.aggregate([
+    // Get per-account breakdown
+    const accountBreakdown = await this.aggregate([
         { $match: filter },
         {
             $group: {
-                _id: null,
-                totalDebit: { $sum: '$debit' },
-                totalCredit: { $sum: '$credit' },
+                _id: '$account.debit',
+                debit: { $sum: '$debit' },
+                credit: { $sum: 0 },
             },
         },
     ]);
 
-    if (result.length === 0) {
-        return { accounts: [], totalDebit: 0, totalCredit: 0 };
-    }
+    const creditBreakdown = await this.aggregate([
+        { $match: filter },
+        {
+            $group: {
+                _id: '$account.credit',
+                debit: { $sum: 0 },
+                credit: { $sum: '$credit' },
+            },
+        },
+    ]);
 
-    const { totalDebit, totalCredit } = result[0];
+    // Combine debit and credit accounts
+    const accountMap = new Map<string, { account: string; debit: number; credit: number }>();
+
+    accountBreakdown.forEach((acc) => {
+        if (acc._id) {
+            accountMap.set(acc._id, {
+                account: acc._id,
+                debit: acc.debit,
+                credit: 0,
+            });
+        }
+    });
+
+    creditBreakdown.forEach((acc) => {
+        if (acc._id) {
+            const existing = accountMap.get(acc._id);
+            if (existing) {
+                existing.credit = acc.credit;
+            } else {
+                accountMap.set(acc._id, {
+                    account: acc._id,
+                    debit: 0,
+                    credit: acc.credit,
+                });
+            }
+        }
+    });
+
+    const accounts = Array.from(accountMap.values()).map((acc) => ({
+        ...acc,
+        balance: acc.debit - acc.credit,
+    }));
+
+    const totalDebit = accounts.reduce((sum, acc) => sum + acc.debit, 0);
+    const totalCredit = accounts.reduce((sum, acc) => sum + acc.credit, 0);
+
     return {
-        accounts: [], // TODO: Implement per-account breakdown
+        accounts,
         totalDebit,
         totalCredit,
     };

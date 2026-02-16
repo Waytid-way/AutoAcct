@@ -47,9 +47,16 @@ export class ErrorBoundary extends Component<Props, State> {
         // Call custom error handler if provided
         this.props.onError?.(error, errorInfo);
 
-        // TODO: Send to error tracking service (Sentry, LogRocket, etc.)
-        // Example:
+        // Error tracking service integration point
+        // To enable error tracking, set NEXT_PUBLIC_SENTRY_DSN in environment
+        // and uncomment the Sentry integration below:
+        //
+        // import * as Sentry from '@sentry/nextjs';
         // Sentry.captureException(error, { extra: errorInfo });
+        //
+        // Or use LogRocket:
+        // import LogRocket from 'logrocket';
+        // LogRocket.captureException(error, { extra: errorInfo });
     }
 
     private handleRetry = () => {

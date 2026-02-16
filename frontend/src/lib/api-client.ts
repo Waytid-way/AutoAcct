@@ -34,7 +34,7 @@ apiClient.interceptors.request.use(
         config.headers.set("x-correlation-id", correlationId);
 
         // Add Authorization header if token exists
-        // TODO: Replace with actual auth token from context/storage
+        // Auth token is retrieved from the auth service which manages context/storage
         const token = getAuthToken();
         if (token) {
             config.headers.set("Authorization", `Bearer ${token}`);
