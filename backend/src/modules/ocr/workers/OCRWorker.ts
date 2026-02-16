@@ -7,6 +7,9 @@ import { MockOCRService } from '../services/MockOCRService';
 import Receipt from '@/models/Receipt.model';
 import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
+import { WorkflowService } from '../../workflow/services/WorkflowService';
+import { container, TOKENS } from '@/shared/di/container';
+import { ILogger, IGroqClassificationService } from '@/shared/di/interfaces';
 
 /**
  * OCR WORKER
@@ -20,12 +23,12 @@ import { GroqClassificationService } from '../../ai/GroqClassificationService';
 export class OCRWorker {
     private integrationService: OCRIntegrationService;
     private ocrService: GroqOCRService | MockOCRService;
-    private classificationService: GroqClassificationService; // Task 3E
+    private classificationService: IGroqClassificationService | undefined; // Task 3E
     private workflowService: WorkflowService;
 
     constructor() {
         this.integrationService = new OCRIntegrationService();
-        this.workflowService = new WorkflowService();
+        this.workflowService = new WorkflowService(container.resolve<ILogger>(TOKENS.Logger));
 
         // Factory Logic for Processor
         if (config.get('OCR_SERVICE_MODE') === 'mock' || !config.isProduction()) {
@@ -35,7 +38,10 @@ export class OCRWorker {
             const apiKey = config.get('GROQ_API_KEY');
             if (!apiKey) throw new Error('GROQ_API_KEY required for production OCR');
             this.ocrService = new GroqOCRService(apiKey);
-            this.classificationService = new GroqClassificationService(apiKey); // Task 3E
+            this.classificationService = new GroqClassificationService(
+                container.resolve<ILogger>(TOKENS.Logger),
+                apiKey
+            ); // Task 3E
             logger.info({ action: 'ocr_worker_init', mode: 'GROQ_PRODUCTION' });
         }
     }

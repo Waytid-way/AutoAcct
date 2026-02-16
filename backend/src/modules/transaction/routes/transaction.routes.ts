@@ -2,14 +2,19 @@
 
 import { Router } from 'express';
 import { TransactionController } from '../controllers/TransactionController';
-import { TransactionService } from '../services/TransactionService';
 import { authMiddleware, requireRole } from '@/shared/middleware';
-import logger from '@/config/logger';
+import { container, TOKENS, initializeContainer } from '@/shared/di/container';
+import { ITransactionService } from '@/shared/di/interfaces';
 
 const router = Router();
 
-// Dependency Injection
-const transactionService = new TransactionService(logger);
+// Initialize DI container if not already initialized
+if (!container.has(TOKENS.TransactionService)) {
+    initializeContainer();
+}
+
+// Resolve services from DI container
+const transactionService = container.resolve<ITransactionService>(TOKENS.TransactionService);
 const transactionController = new TransactionController(transactionService);
 
 // Apply Auth globally for this router

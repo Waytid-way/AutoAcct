@@ -1,9 +1,9 @@
 import Receipt from '../../../models/Receipt.model';
 import { Anomaly, IAnomalyContext, AnomalyType } from '../models/Anomaly';
-import logger from '../../../config/logger';
 import { StatisticalAnalysisService } from './StatisticalAnalysisService';
+import { ILogger, IAnomalyDetectionService, IAnomalyResult, IReceipt, IStatisticalAnalysisService } from '@/shared/di/interfaces';
 
-interface DetectionResult {
+export interface DetectionResult {
     hasAnomaly: boolean;
     anomalies: Array<{
         type: AnomalyType;
@@ -16,13 +16,24 @@ interface DetectionResult {
     }>;
 }
 
-export class AnomalyDetectionService {
+export class AnomalyDetectionService implements IAnomalyDetectionService {
     private readonly LOOKBACK_DAYS = 90;  // 3 months historical data
     private readonly OUTLIER_THRESHOLD = 3; // 3 standard deviations
-    private statisticalService: StatisticalAnalysisService;
 
-    constructor(statisticalService?: StatisticalAnalysisService) {
-        this.statisticalService = statisticalService || new StatisticalAnalysisService();
+    /**
+     * Initialize Service with Dependencies
+     * All dependencies are required - fail fast if missing
+     * 
+     * @param logger - Logger instance
+     * @param statisticalService - Statistical analysis service
+     */
+    constructor(
+        private readonly logger: ILogger,
+        private readonly statisticalService: IStatisticalAnalysisService
+    ) {
+        // Validate required dependencies
+        if (!logger) throw new Error('AnomalyDetectionService: logger is required');
+        if (!statisticalService) throw new Error('AnomalyDetectionService: statisticalService is required');
     }
 
     /**
@@ -39,7 +50,7 @@ export class AnomalyDetectionService {
         correlationId: string
     ): Promise<DetectionResult> {
         try {
-            logger.debug({
+            this.logger.debug({
                 correlationId,
                 action: 'anomaly_detection_start',
                 receiptId
@@ -78,7 +89,7 @@ export class AnomalyDetectionService {
                 await this.persistAnomalies(anomalies, receiptId, clientId, correlationId);
             }
 
-            logger.info({
+            this.logger.info({
                 correlationId,
                 action: 'anomaly_detection_complete',
                 receiptId,
@@ -91,13 +102,14 @@ export class AnomalyDetectionService {
                 anomalies
             };
 
-        } catch (error: any) {
-            logger.error({
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({
                 correlationId,
                 action: 'anomaly_detection_failed',
                 receiptId,
-                error: error.message,
-                stack: error.stack
+                error: errorMessage,
+                stack: error instanceof Error ? error.stack : undefined
             });
 
             // ✅ Fail gracefully: return no anomalies on error
@@ -109,20 +121,45 @@ export class AnomalyDetectionService {
     }
 
     /**
+     * Analyze receipt for anomalies (implements interface)
+     */
+    async analyzeReceipt(
+        receipt: IReceipt,
+        correlationId: string
+    ): Promise<IAnomalyResult> {
+        const clientId = (receipt as unknown as { clientId: string }).clientId;
+        const receiptId = receipt._id?.toString() || '';
+        
+        const result = await this.detectAnomalies(receiptId, clientId, correlationId);
+        
+        // Get the highest severity anomaly
+        const highestSeverityAnomaly = result.anomalies[0];
+        
+        return {
+            isAnomaly: result.hasAnomaly,
+            score: highestSeverityAnomaly?.confidence || 0,
+            reason: highestSeverityAnomaly?.message
+        };
+    }
+
+    /**
      * ✅ RULE 1: Detect duplicate receipts
      */
     private async detectDuplicates(
-        receipt: any,
+        receipt: Record<string, unknown>,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies']> {
         const anomalies: DetectionResult['anomalies'] = [];
 
-        if (!receipt.extractedFields?.vendor || !receipt.extractedFields?.amount) {
+        const extractedFields = receipt.extractedFields as Record<string, unknown> | undefined;
+        if (!extractedFields?.vendor || !extractedFields?.amount) {
             return anomalies;
         }
 
-        const { vendor, amount, date } = receipt.extractedFields;
+        const vendor = extractedFields.vendor as string;
+        const amount = extractedFields.amount as number;
+        const date = extractedFields.date as Date | undefined;
         const safeDate = date ? new Date(date) : new Date();
 
         // ✅ Check 1: Exact duplicate (same vendor, amount, date)
@@ -147,7 +184,7 @@ export class AnomalyDetectionService {
                 message: `Found ${exactDuplicates.length} receipt(s) with same vendor, amount, and date`,
                 suggestion: `Review receipt(s): ${exactDuplicates.map(d => d._id).join(', ')}`,
                 context: {
-                    receiptId: receipt._id.toString(),
+                    receiptId: (receipt._id as { toString(): string }).toString(),
                     relatedIds: exactDuplicates.map(d => d._id.toString()),
                     vendorName: vendor,
                     actualValue: amount
@@ -185,7 +222,7 @@ export class AnomalyDetectionService {
                     message: `Found ${uniqueSimilars.length} similar receipt(s) (same vendor, amount within ±฿1, within 3 days)`,
                     suggestion: `Verify if these are separate transactions`,
                     context: {
-                        receiptId: receipt._id.toString(),
+                        receiptId: (receipt._id as { toString(): string }).toString(),
                         relatedIds: uniqueSimilars.map(d => d._id.toString()),
                         vendorName: vendor,
                         actualValue: amount
@@ -194,7 +231,7 @@ export class AnomalyDetectionService {
             }
         }
 
-        logger.debug({
+        this.logger.debug({
             correlationId,
             action: 'duplicate_check_complete',
             exact: exactDuplicates.length,
@@ -208,24 +245,26 @@ export class AnomalyDetectionService {
      * ✅ RULE 2: Detect price outliers using 3-sigma rule
      */
     private async detectPriceOutliers(
-        receipt: any,
+        receipt: Record<string, unknown>,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies']> {
         const anomalies: DetectionResult['anomalies'] = [];
 
-        if (!receipt.extractedFields?.vendor || !receipt.extractedFields?.amount) {
+        const extractedFields = receipt.extractedFields as Record<string, unknown> | undefined;
+        if (!extractedFields?.vendor || !extractedFields?.amount) {
             return anomalies;
         }
 
-        const { vendor, amount } = receipt.extractedFields;
+        const vendor = extractedFields.vendor as string;
+        const amount = extractedFields.amount as number;
 
         // ✅ Get historical data using Statistical Service (Cached)
         const stats = await this.statisticalService.getVendorStatistics(vendor, clientId, this.LOOKBACK_DAYS);
 
         if (!stats || stats.count < 5) {
             // Not enough data for statistical analysis
-            logger.debug({
+            this.logger.debug({
                 correlationId,
                 action: 'outlier_check_skipped',
                 reason: 'insufficient_data',
@@ -254,7 +293,7 @@ export class AnomalyDetectionService {
                 message: `${vendor}: ฿${(amount / 100).toFixed(2)} is ${percentDiff}% ${isHigher ? 'above' : 'below'} average`,
                 suggestion: `Typical: ฿${(avg / 100).toFixed(2)} ± ฿${(stdDev / 100).toFixed(2)}. Verify if correct.`,
                 context: {
-                    receiptId: receipt._id.toString(),
+                    receiptId: (receipt._id as { toString(): string }).toString(),
                     vendorName: vendor,
                     actualValue: amount,
                     expectedValue: Math.round(avg),
@@ -264,7 +303,7 @@ export class AnomalyDetectionService {
             });
         }
 
-        logger.debug({
+        this.logger.debug({
             correlationId,
             action: 'outlier_check_complete',
             zScore: zScore.toFixed(2),
@@ -278,15 +317,16 @@ export class AnomalyDetectionService {
      * ✅ RULE 3: Detect new vendors (first-time appearance)
      */
     private async detectNewVendor(
-        receipt: any,
+        receipt: Record<string, unknown>,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
-        if (!receipt.extractedFields?.vendor) {
+        const extractedFields = receipt.extractedFields as Record<string, unknown> | undefined;
+        if (!extractedFields?.vendor) {
             return null;
         }
 
-        const { vendor } = receipt.extractedFields;
+        const vendor = extractedFields.vendor as string;
 
         // Check if this vendor has been seen before
         const existingVendorCount = await Receipt.countDocuments({
@@ -297,7 +337,7 @@ export class AnomalyDetectionService {
         });
 
         if (existingVendorCount === 0) {
-            logger.debug({
+            this.logger.debug({
                 correlationId,
                 action: 'new_vendor_detected',
                 vendor
@@ -311,7 +351,7 @@ export class AnomalyDetectionService {
                 message: `First time seeing vendor: ${vendor}`,
                 suggestion: 'Verify vendor name and category are correct',
                 context: {
-                    receiptId: receipt._id.toString(),
+                    receiptId: (receipt._id as { toString(): string }).toString(),
                     vendorName: vendor
                 }
             };
@@ -324,20 +364,21 @@ export class AnomalyDetectionService {
      * ✅ RULE 4: Detect unusual timing (e.g., midnight transactions)
      */
     private async detectUnusualTiming(
-        receipt: any,
+        receipt: Record<string, unknown>,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
-        if (!receipt.extractedFields?.date) {
+        const extractedFields = receipt.extractedFields as Record<string, unknown> | undefined;
+        if (!extractedFields?.date) {
             return null;
         }
 
-        const date = new Date(receipt.extractedFields.date);
+        const date = new Date(extractedFields.date as string);
         const hour = date.getHours();
 
         // ✅ Flag transactions between midnight and 5am (unusual for retail)
         if (hour >= 0 && hour < 5) {
-            logger.debug({
+            this.logger.debug({
                 correlationId,
                 action: 'unusual_timing_detected',
                 hour
@@ -351,8 +392,8 @@ export class AnomalyDetectionService {
                 message: `Receipt dated at ${hour}:00 (between midnight and 5am)`,
                 suggestion: 'Verify if timestamp is correct',
                 context: {
-                    receiptId: receipt._id.toString(),
-                    vendorName: receipt.extractedFields?.vendor
+                    receiptId: (receipt._id as { toString(): string }).toString(),
+                    vendorName: extractedFields?.vendor as string
                 }
             };
         }
@@ -364,18 +405,20 @@ export class AnomalyDetectionService {
      * ✅ RULE 5: Detect category inconsistency (vendor usually in different category)
      */
     private async detectCategoryInconsistency(
-        receipt: any,
+        receipt: Record<string, unknown>,
         clientId: string,
         correlationId: string
     ): Promise<DetectionResult['anomalies'][0] | null> {
         // Check if we have a category to check against
-        const category = receipt.extractedFields?.category || receipt.classification?.category;
+        const extractedFields = receipt.extractedFields as Record<string, unknown> | undefined;
+        const classification = receipt.classification as Record<string, unknown> | undefined;
+        const category = extractedFields?.category || classification?.category;
 
-        if (!receipt.extractedFields?.vendor || !category) {
+        if (!extractedFields?.vendor || !category) {
             return null;
         }
 
-        const { vendor } = receipt.extractedFields;
+        const vendor = extractedFields.vendor as string;
 
         // ✅ Get most common category for this vendor
         const historicalCategories = await Receipt.aggregate([
@@ -416,7 +459,7 @@ export class AnomalyDetectionService {
 
             // ✅ Flag if current category differs from historical pattern (with 5+ samples)
             if (mostCommonCategory !== category && count >= 5) {
-                logger.debug({
+                this.logger.debug({
                     correlationId,
                     action: 'category_inconsistency_detected',
                     vendor,
@@ -432,9 +475,9 @@ export class AnomalyDetectionService {
                     message: `${vendor} usually categorized as ${mostCommonCategory}, but this is ${category}`,
                     suggestion: `Verify category. Historical: ${mostCommonCategory} (${count} receipts)`,
                     context: {
-                        receiptId: receipt._id.toString(),
+                        receiptId: (receipt._id as { toString(): string }).toString(),
                         vendorName: vendor,
-                        category,
+                        category: category as string,
                         expectedValue: mostCommonCategory
                     }
                 };
@@ -467,7 +510,7 @@ export class AnomalyDetectionService {
 
         await Anomaly.insertMany(docs);
 
-        logger.info({
+        this.logger.info({
             correlationId,
             action: 'anomalies_persisted',
             receiptId,
@@ -481,14 +524,15 @@ export class AnomalyDetectionService {
     async getPendingAnomalies(
         clientId: string,
         limit: number = 50
-    ): Promise<any[]> {
-        return Anomaly.find({
+    ): Promise<Array<Record<string, unknown>>> {
+        const anomalies = await Anomaly.find({
             clientId,
             status: 'pending'
         })
             .sort({ severity: 1, detectedAt: -1 })  // Critical first, then newest
             .limit(limit)
             .lean();
+        return anomalies as Array<Record<string, unknown>>;
     }
 
     /**
@@ -511,7 +555,7 @@ export class AnomalyDetectionService {
             }
         );
 
-        logger.info({
+        this.logger.info({
             correlationId,
             action: 'anomaly_dismissed',
             anomalyId,
@@ -522,7 +566,7 @@ export class AnomalyDetectionService {
     /**
      * ✅ Get anomaly statistics
      */
-    async getStatistics(clientId: string): Promise<any> {
+    async getStatistics(clientId: string): Promise<Record<string, unknown>> {
         const stats = await Anomaly.aggregate([
             {
                 $match: { clientId }

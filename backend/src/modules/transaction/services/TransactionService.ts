@@ -3,15 +3,11 @@
 import mongoose from 'mongoose';
 import { Transaction, ITransaction } from '../models/Transaction.model';
 import Receipt from '@/models/Receipt.model';
-import { LedgerIntegrationService } from '@/modules/ledger/services/LedgerIntegrationService';
+import { ILedgerIntegrationService, ILogger, ITransactionService } from '@/shared/di/interfaces';
 import {
   NotFoundError,
   ValidationError,
-  FinancialIntegrityError,
-  ForbiddenError,
 } from '@/shared/errors';
-import logger from '@/config/logger';
-import { Logger } from 'winston';
 import type {
   CreateTransactionInput,
   UpdateTransactionInput,
@@ -30,16 +26,21 @@ import type {
  * 
  * Reference: Skill 3, Skill 4
  */
-export class TransactionService {
-  private logger: Logger;
-  private ledgerIntegration: LedgerIntegrationService;
-
+export class TransactionService implements ITransactionService {
   /**
    * Initialize Service with Dependencies
+   * All dependencies are required - fail fast if missing
+   * 
+   * @param logger - Logger instance
+   * @param ledgerIntegration - Ledger integration service
    */
-  constructor(loggerInstance?: Logger) {
-    this.logger = loggerInstance || logger;
-    this.ledgerIntegration = new LedgerIntegrationService();
+  constructor(
+    private readonly logger: ILogger,
+    private readonly ledgerIntegration: ILedgerIntegrationService
+  ) {
+    // Validate required dependencies
+    if (!logger) throw new Error('TransactionService: logger is required');
+    if (!ledgerIntegration) throw new Error('TransactionService: ledgerIntegration is required');
   }
 
   /**
@@ -114,14 +115,14 @@ export class TransactionService {
     correlationId: string
   ): Promise<{ data: ITransaction[]; total: number }> {
     // Build filter
-    const filter: any = { clientId };
+    const filter: Record<string, unknown> = { clientId };
 
     if (params.status) filter.status = params.status;
     if (params.receiptId) filter.receiptId = params.receiptId;
     if (params.startDate || params.endDate) {
       filter.date = {};
-      if (params.startDate) filter.date.$gte = params.startDate;
-      if (params.endDate) filter.date.$lte = params.endDate;
+      if (params.startDate) (filter.date as Record<string, Date>).$gte = params.startDate;
+      if (params.endDate) (filter.date as Record<string, Date>).$lte = params.endDate;
     }
 
     // Execute query
@@ -242,13 +243,14 @@ export class TransactionService {
             reference: transaction.reference
           }
         }, correlationId);
-      } catch (ledgerError: any) {
+      } catch (ledgerError: unknown) {
+        const errorMessage = ledgerError instanceof Error ? ledgerError.message : 'Unknown error';
         // Log but do NOT rollback approval. Eventual consistency required.
         this.logger.error({
           action: 'ledger_shadow_post_failed',
           correlationId,
           transactionId,
-          error: ledgerError.message,
+          error: errorMessage,
           note: 'Transaction posted locally but Ledger sync failed. Requires reconciliation.'
         });
       }
@@ -260,14 +262,15 @@ export class TransactionService {
       });
 
       return transaction;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (session.inTransaction()) {
         await session.abortTransaction();
       }
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error({
         action: 'approve_transaction_failed',
         correlationId,
-        error: err.message,
+        error: errorMessage,
       });
       throw err;
     } finally {
@@ -352,7 +355,16 @@ export class TransactionService {
     startDate: Date | undefined,
     endDate: Date | undefined,
     correlationId: string
-  ) {
+  ): Promise<{
+    accounts: Array<{
+      account: string;
+      debit: number;
+      credit: number;
+      balance: number;
+    }>;
+    totalDebit: number;
+    totalCredit: number;
+  }> {
     return Transaction.getTrialBalance(clientId, startDate, endDate);
   }
 }

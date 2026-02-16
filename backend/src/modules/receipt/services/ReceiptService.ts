@@ -2,10 +2,15 @@
 
 import crypto from 'crypto';
 import Receipt, { IReceipt } from '@/models/Receipt.model';
-import { TransactionService } from '@/modules/transaction/services/TransactionService';
-import { AccountingService } from '@/modules/accounting/services/AccountingService';
-import { GroqClassificationService } from '@/modules/ai/GroqClassificationService';
-import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetectionService';
+import {
+  IReceiptService,
+  ITransactionService,
+  IAccountingService,
+  IGroqClassificationService,
+  IAnomalyDetectionService,
+  ILogger,
+  IStorageAdapter
+} from '@/shared/di/interfaces';
 import { MoneyInt } from '@/utils/money';
 import config from '@/config/ConfigManager';
 import {
@@ -13,8 +18,6 @@ import {
   NotFoundError,
   ValidationError
 } from '@/shared/errors';
-import logger from '@/config/logger';
-import { Logger } from 'winston';
 import { sanitizeFileName, sanitizeText, validateFileType, validateFileSize } from '@/shared/utils/sanitization';
 import type {
   QueueQueryInput,
@@ -36,31 +39,32 @@ import type {
  * Reference: Skill 3 - Service Layer Pattern
  * Reference: Phase 2.2 Task 1.5
  */
-export class ReceiptService {
-  private logger: Logger;
-  private transactionService: TransactionService;
-  private accountingService: AccountingService;
-  private groqService: GroqClassificationService;
-  private anomalyService: AnomalyDetectionService;
-
+export class ReceiptService implements IReceiptService {
   /**
    * Initialize Service with Dependencies
-   * @param loggerInstance - Optional logger for DI (uses default if omitted)
-   * @param transactionService - Optional transaction service
-   * @param accountingService - Optional accounting service
+   * All dependencies are required - fail fast if missing
+   * 
+   * @param logger - Logger instance
+   * @param transactionService - Transaction service
+   * @param accountingService - Accounting service
+   * @param groqService - Groq AI classification service
+   * @param anomalyService - Anomaly detection service
+   * @param storageAdapter - Storage adapter for file operations (optional for now)
    */
   constructor(
-    loggerInstance?: Logger,
-    transactionService?: TransactionService,
-    accountingService?: AccountingService,
-    groqService?: GroqClassificationService,
-    anomalyService?: AnomalyDetectionService
+    private readonly logger: ILogger,
+    private readonly transactionService: ITransactionService,
+    private readonly accountingService: IAccountingService,
+    private readonly groqService: IGroqClassificationService,
+    private readonly anomalyService: IAnomalyDetectionService,
+    private readonly storageAdapter?: IStorageAdapter
   ) {
-    this.logger = loggerInstance || logger;
-    this.transactionService = transactionService || new TransactionService(this.logger);
-    this.accountingService = accountingService || new AccountingService();
-    this.groqService = groqService || new GroqClassificationService(process.env.GROQ_API_KEY || '');
-    this.anomalyService = anomalyService || new AnomalyDetectionService();
+    // Validate required dependencies
+    if (!logger) throw new Error('ReceiptService: logger is required');
+    if (!transactionService) throw new Error('ReceiptService: transactionService is required');
+    if (!accountingService) throw new Error('ReceiptService: accountingService is required');
+    if (!groqService) throw new Error('ReceiptService: groqService is required');
+    if (!anomalyService) throw new Error('ReceiptService: anomalyService is required');
   }
 
   /**
@@ -179,7 +183,7 @@ export class ReceiptService {
     });
 
     // Build filter
-    const filter: any = { clientId };
+    const filter: Record<string, unknown> = { clientId };
     if (query.status) {
       filter.status = query.status;
     }
@@ -279,7 +283,7 @@ export class ReceiptService {
     const receipt = await this.getById(receiptId, clientId, correlationId);
 
     // Step 2: Update with feedback
-    const feedbackData: any = {
+    const feedbackData: Record<string, unknown> = {
       correctedAt: new Date(),
     };
 
@@ -483,7 +487,7 @@ export class ReceiptService {
       throw new NotFoundError(`Receipt`, receiptId);
     }
 
-    let result;
+    let result: { receiptId: string; transactionId?: string; splitGroupId?: string; status: 'draft' };
 
     // 2. Branch: Split Transaction vs Simple Transaction
     if (data.lineItems && data.lineItems.length > 0) {
@@ -589,10 +593,10 @@ export class ReceiptService {
       throw new NotFoundError(`Receipt`, receiptId);
     }
 
-    // Delete from storage if exists (TODO: Inject StorageAdapter)
-    // if (receipt.fileUrl && this.storageAdapter) {
-    //     await this.storageAdapter.delete(receipt.fileUrl);
-    // }
+    // Delete from storage if exists and storage adapter is available
+    if (receipt.fileUrl && this.storageAdapter) {
+      await this.storageAdapter.delete(receipt.fileUrl);
+    }
 
     // Delete from database
     await receipt.deleteOne();

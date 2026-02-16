@@ -1,7 +1,7 @@
 // backend/src/modules/receipt/controllers/ReceiptController.ts
 
 import { Request, Response, NextFunction } from 'express';
-import { ReceiptService } from '../services/ReceiptService';
+import { IReceiptService } from '@/shared/di/interfaces';
 import {
     uploadReceiptSchema,
     queueQuerySchema,
@@ -16,26 +16,26 @@ import config from '@/config/ConfigManager';
 
 /**
  * RECEIPT CONTROLLER
- * 
+ *
  * Pure HTTP adapter for Receipt operations.
  * Follows AutoAcct REST Controller Pattern.
- * 
+ *
  * Responsibilities:
  * - Parse & validate HTTP requests
  * - Call ReceiptService methods
  * - Format standardized responses
  * - Pass correlationId for tracing
- * 
+ *
  * NOT responsible for:
  * - Business logic
  * - Data transformation
  * - Database access
- * 
+ *
  * Reference: Skill 1 - REST Controller Pattern
  * Reference: Phase 2.2 Guide - Task 1
  */
 export class ReceiptController {
-    constructor(private receiptService: ReceiptService) { }
+    constructor(private receiptService: IReceiptService) { }
 
     /**
      * POST /api/receipts/upload

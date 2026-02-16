@@ -3,7 +3,7 @@
 import { ILedgerAdapter } from '../adapters/ILedgerAdapter';
 import { MockLedgerAdapter } from '../adapters/MockLedgerAdapter';
 import { MediciAdapter } from '../adapters/MediciAdapter';
-import { ILedgerEntry, ILedgerTransaction } from '../types/ledger.types';
+import { ILedgerIntegrationService, ILedgerEntry, ILedgerTransaction } from '@/shared/di/interfaces';
 import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
 
@@ -13,7 +13,7 @@ import logger from '@/config/logger';
  * Factory/Facade for interacting with the Ledger.
  * Handles Dual Mode switching (MOCK vs MEDICI).
  */
-export class LedgerIntegrationService {
+export class LedgerIntegrationService implements ILedgerIntegrationService {
     private adapter: ILedgerAdapter;
 
     constructor() {

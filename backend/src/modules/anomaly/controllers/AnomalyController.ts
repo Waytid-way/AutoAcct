@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { AnomalyDetectionService } from '../services/AnomalyDetectionService';
-import { logger } from '@/config/logger';
+import { IAnomalyDetectionService } from '@/shared/di/interfaces';
+import logger from '@/config/logger';
 import { z } from 'zod';
 
 const dismissAnomalySchema = z.object({
@@ -8,16 +8,16 @@ const dismissAnomalySchema = z.object({
 });
 
 // Extend Request type to include user
-interface AuthenticatedRequest extends Request {
+type AuthenticatedRequest = Request & {
     user?: {
         id: string;
         clientId: string;
         role: string;
     };
-}
+};
 
 export class AnomalyController {
-    constructor(private anomalyService: AnomalyDetectionService) { }
+    constructor(private anomalyService: IAnomalyDetectionService) { }
 
     /**
      * GET /api/anomalies

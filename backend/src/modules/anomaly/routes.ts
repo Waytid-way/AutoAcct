@@ -1,13 +1,20 @@
 import { Router } from 'express';
 import { AnomalyController } from './controllers/AnomalyController';
-import { AnomalyDetectionService } from './services/AnomalyDetectionService';
-import { authenticate } from '@/shared/middleware/auth.middleware';
+import { authMiddleware } from '@/shared/middleware';
+import { container, TOKENS, initializeContainer } from '@/shared/di/container';
+import { IAnomalyDetectionService } from '@/shared/di/interfaces';
 
 const router = Router();
-const anomalyService = new AnomalyDetectionService();
+
+// Initialize DI container if not already initialized
+if (!container.has(TOKENS.AnomalyDetectionService)) {
+    initializeContainer();
+}
+
+const anomalyService = container.resolve<IAnomalyDetectionService>(TOKENS.AnomalyDetectionService);
 const anomalyController = new AnomalyController(anomalyService);
 
-router.use(authenticate);
+router.use(authMiddleware);
 
 router.get(
     '/',

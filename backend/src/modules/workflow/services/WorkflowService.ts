@@ -1,17 +1,18 @@
 // backend/src/modules/workflow/services/WorkflowService.ts
 
 import { ITeableService } from '../../teable/types/teable.types';
-import { TransactionService } from '../../transaction/services/TransactionService';
 import { IReceipt } from '@/models/schemas/Receipt.schema';
 import Receipt from '@/models/Receipt.model'; // Mongoose Model
 import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
 import { TeableService } from '../../teable/adapters/TeableService';
 import { MockTeableService } from '../../teable/adapters/MockTeableService';
+import { container, TOKENS } from '@/shared/di/container';
+import { ITransactionService, ILogger } from '@/shared/di/interfaces';
 
 /**
  * WORKFLOW SERVICE - Event Orchestrator
- * 
+ *
  * Triggered by: OCRWorker.onJobCompleted
  * Executes:
  * 1. TeableService.createRecord() -> Teable Kanban
@@ -20,9 +21,9 @@ import { MockTeableService } from '../../teable/adapters/MockTeableService';
  */
 export class WorkflowService {
     private teableService: ITeableService;
-    private transactionService: TransactionService;
+    private transactionService: ITransactionService;
 
-    constructor() {
+    constructor(private logger: ILogger) {
         // Teable Factory Logic
         if (config.get('TEABLE_SERVICE_MODE') === 'mock' || !config.isProduction()) {
             this.teableService = new MockTeableService();
@@ -42,7 +43,7 @@ export class WorkflowService {
             logger.info({ action: 'workflow_init', mode: 'PROD_TEABLE' });
         }
 
-        this.transactionService = new TransactionService();
+        this.transactionService = container.resolve<ITransactionService>(TOKENS.TransactionService);
     }
 
     /**

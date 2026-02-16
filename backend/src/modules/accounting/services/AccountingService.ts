@@ -5,7 +5,7 @@ import Receipt from '@/models/Receipt.model'; // Updated import path
 import { MedicerService } from './MedicerService';
 import { MoneyInt } from '@/utils/money';
 import { FinancialIntegrityError, NotFoundError } from '@/utils/errors';
-import logger from '@/config/logger';
+import { ILogger, IAccountingService, IMedicerService } from '@/shared/di/interfaces';
 
 interface SplitEntryItem {
     debitAccount: string;    // "5100-Food"
@@ -13,11 +13,21 @@ interface SplitEntryItem {
     description: string;     // "Coffee Latte x2"
 }
 
-export class AccountingService {
-    private medicerService: MedicerService;
-
-    constructor(medicerService?: MedicerService) {
-        this.medicerService = medicerService || new MedicerService();
+export class AccountingService implements IAccountingService {
+    /**
+     * Initialize Service with Dependencies
+     * All dependencies are required - fail fast if missing
+     * 
+     * @param logger - Logger instance
+     * @param medicerService - Medicer ledger service
+     */
+    constructor(
+        private readonly logger: ILogger,
+        private readonly medicerService: IMedicerService
+    ) {
+        // Validate required dependencies
+        if (!logger) throw new Error('AccountingService: logger is required');
+        if (!medicerService) throw new Error('AccountingService: medicerService is required');
     }
 
     /**
@@ -40,12 +50,12 @@ export class AccountingService {
         creditAccount: string,
         clientId: string,
         correlationId: string
-    ): Promise<any[]> {
+    ): Promise<Array<Record<string, unknown>>> {
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            logger.info({
+            this.logger.info({
                 correlationId,
                 action: 'create_split_entry_start',
                 receiptId,
@@ -82,7 +92,7 @@ export class AccountingService {
 
             // ✅ Step 3: Generate split group ID
             const splitGroupId = uuidv4();
-            const entries: any[] = []; // Typed as any array for now to avoid specific model return issues in this block
+            const entries: Array<Record<string, unknown>> = [];
 
             // ✅ Step 4: Create entry for each line item
             for (let i = 0; i < lineItems.length; i++) {
@@ -117,7 +127,7 @@ export class AccountingService {
 
                 await entry.save({ session });
 
-                logger.debug({
+                this.logger.debug({
                     correlationId,
                     action: 'split_entry_created',
                     entryId: entry._id,
@@ -137,7 +147,7 @@ export class AccountingService {
                     session
                 );
 
-                entries.push(entry);
+                entries.push(entry.toObject());
             }
 
             // ✅ Step 6: Verify trial balance
@@ -164,7 +174,7 @@ export class AccountingService {
             // ✅ Step 8: Commit transaction
             await session.commitTransaction();
 
-            logger.info({
+            this.logger.info({
                 correlationId,
                 action: 'split_entry_complete',
                 receiptId,
@@ -175,15 +185,16 @@ export class AccountingService {
 
             return entries;
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             await session.abortTransaction();
 
-            logger.error({
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({
                 correlationId,
                 action: 'split_entry_failed',
                 receiptId,
-                error: error.message,
-                stack: error.stack
+                error: errorMessage,
+                stack: error instanceof Error ? error.stack : undefined
             });
 
             throw error;
@@ -198,10 +209,11 @@ export class AccountingService {
     async getSplitEntries(
         splitGroupId: string,
         clientId: string
-    ): Promise<typeof JournalEntry[]> {
-        return JournalEntry.find({
+    ): Promise<Array<Record<string, unknown>>> {
+        const entries = await JournalEntry.find({
             splitGroupId,
             clientId
         }).sort({ splitIndex: 1 }).lean();
+        return entries as Array<Record<string, unknown>>;
     }
 }

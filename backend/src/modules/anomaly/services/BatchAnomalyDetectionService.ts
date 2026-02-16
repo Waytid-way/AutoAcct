@@ -1,9 +1,11 @@
 import { AnomalyDetectionService } from './AnomalyDetectionService';
 import Receipt from '../../../models/Receipt.model';
 import logger from '../../../config/logger';
+import { container, TOKENS } from '../../../shared/di/container';
+import { IAnomalyDetectionService, ILogger } from '../../../shared/di/interfaces';
 
 export class BatchAnomalyDetectionService {
-    constructor(private anomalyService: AnomalyDetectionService = new AnomalyDetectionService()) { }
+    constructor(private anomalyService: IAnomalyDetectionService = container.resolve<IAnomalyDetectionService>(TOKENS.AnomalyDetectionService)) { }
 
     /**
      * Run anomaly detection on all unanalyzed receipts

@@ -15,15 +15,15 @@ import {
 describe('Money Utils - Golden Rule #1: Integer Only', () => {
     describe('bahtToSatang()', () => {
         test('converts Baht to Satang correctly', () => {
-            expect(bahtToSatang(125.5)).toBe(12550);
-            expect(bahtToSatang(0.01)).toBe(1);
-            expect(bahtToSatang(0)).toBe(0);
-            expect(bahtToSatang(1000)).toBe(100000);
+            expect(bahtToSatang(125.5)).toBe(12550 as MoneyInt);
+            expect(bahtToSatang(0.01)).toBe(1 as MoneyInt);
+            expect(bahtToSatang(0)).toBe(0 as MoneyInt);
+            expect(bahtToSatang(1000)).toBe(100000 as MoneyInt);
         });
 
         test('rounds to nearest integer', () => {
-            expect(bahtToSatang(125.555)).toBe(12556); // Rounds up
-            expect(bahtToSatang(125.554)).toBe(12555); // Rounds down
+            expect(bahtToSatang(125.555)).toBe(12556 as MoneyInt); // Rounds up
+            expect(bahtToSatang(125.554)).toBe(12555 as MoneyInt); // Rounds down
         });
     });
 
@@ -46,14 +46,14 @@ describe('Money Utils - Golden Rule #1: Integer Only', () => {
         test('handles remainder correctly', () => {
             const split = plugSplit(100 as MoneyInt, 3);
             // 100 ÷ 3 = 33.33... → [34, 33, 33]
-            expect(split[0]).toBe(34); // Remainder added to first
-            expect(split[1]).toBe(33);
-            expect(split[2]).toBe(33);
+            expect(split[0]).toBe(34 as MoneyInt); // Remainder added to first
+            expect(split[1]).toBe(33 as MoneyInt);
+            expect(split[2]).toBe(33 as MoneyInt);
         });
 
         test('works with even splits', () => {
             const split = plugSplit(300 as MoneyInt, 3);
-            expect(split).toEqual([100, 100, 100]);
+            expect(split).toEqual([100 as MoneyInt, 100 as MoneyInt, 100 as MoneyInt]);
         });
 
         test('throws error for invalid parts', () => {
@@ -64,19 +64,19 @@ describe('Money Utils - Golden Rule #1: Integer Only', () => {
     describe('money.add()', () => {
         test('adds MoneyInt values', () => {
             const result = money.add(100 as MoneyInt, 200 as MoneyInt, 300 as MoneyInt);
-            expect(result).toBe(600);
+            expect(result).toBe(600 as MoneyInt);
         });
 
         test('handles zero', () => {
             const result = money.add(0 as MoneyInt, 100 as MoneyInt);
-            expect(result).toBe(100);
+            expect(result).toBe(100 as MoneyInt);
         });
     });
 
     describe('money.subtract()', () => {
         test('subtracts MoneyInt values', () => {
             const result = money.subtract(300 as MoneyInt, 100 as MoneyInt);
-            expect(result).toBe(200);
+            expect(result).toBe(200 as MoneyInt);
         });
 
         test('throws error for negative result', () => {
@@ -89,24 +89,24 @@ describe('Money Utils - Golden Rule #1: Integer Only', () => {
     describe('money.multiply()', () => {
         test('multiplies MoneyInt by factor', () => {
             const result = money.multiply(100 as MoneyInt, 3);
-            expect(result).toBe(300);
+            expect(result).toBe(300 as MoneyInt);
         });
 
         test('rounds to nearest integer', () => {
             const result = money.multiply(100 as MoneyInt, 2.5);
-            expect(result).toBe(250);
+            expect(result).toBe(250 as MoneyInt);
         });
     });
 
     describe('money.divide()', () => {
         test('divides MoneyInt by divisor', () => {
             const result = money.divide(300 as MoneyInt, 3);
-            expect(result).toBe(100);
+            expect(result).toBe(100 as MoneyInt);
         });
 
         test('rounds to nearest integer', () => {
             const result = money.divide(100 as MoneyInt, 3);
-            expect(result).toBe(33); // 33.33... → 33
+            expect(result).toBe(33 as MoneyInt); // 33.33... → 33
         });
     });
 
@@ -119,10 +119,10 @@ describe('Money Utils - Golden Rule #1: Integer Only', () => {
 
     describe('parseMoneyInput()', () => {
         test('parses various input formats', () => {
-            expect(parseMoneyInput('125.50')).toBe(12550);
-            expect(parseMoneyInput('125')).toBe(12500);
-            expect(parseMoneyInput('฿125.50')).toBe(12550);
-            expect(parseMoneyInput('1,000.00')).toBe(100000);
+            expect(parseMoneyInput('125.50')).toBe(12550 as MoneyInt);
+            expect(parseMoneyInput('125')).toBe(12500 as MoneyInt);
+            expect(parseMoneyInput('฿125.50')).toBe(12550 as MoneyInt);
+            expect(parseMoneyInput('1,000.00')).toBe(100000 as MoneyInt);
         });
 
         test('throws error for invalid input', () => {
@@ -149,7 +149,7 @@ describe('Money Utils - Golden Rule #1: Integer Only', () => {
 
             // ✅ CORRECT - Integer arithmetic
             const satangResult = money.add(10 as MoneyInt, 20 as MoneyInt);
-            expect(satangResult).toBe(30); // PASSES!
+            expect(satangResult).toBe(30 as MoneyInt); // PASSES!
         });
     });
 });

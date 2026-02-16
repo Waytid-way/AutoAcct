@@ -1,7 +1,7 @@
 // backend/src/modules/transaction/controllers/TransactionController.ts
 
 import { Request, Response, NextFunction } from 'express';
-import { TransactionService } from '../services/TransactionService';
+import { ITransactionService } from '@/shared/di/interfaces';
 import {
     createTransactionSchema,
     updateTransactionSchema,
@@ -15,14 +15,14 @@ import logger from '@/config/logger';
 
 /**
  * TRANSACTION CONTROLLER
- * 
+ *
  * HTTP Adapter for Transaction operations.
  * Handles request parsing, validation, and service delegation.
- * 
+ *
  * Reference: Skill 1, Skill 2
  */
 export class TransactionController {
-    constructor(private transactionService: TransactionService) { }
+    constructor(private transactionService: ITransactionService) { }
 
     /**
      * Create Draft

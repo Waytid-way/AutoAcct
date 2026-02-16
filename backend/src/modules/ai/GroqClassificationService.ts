@@ -1,10 +1,8 @@
 import Groq from 'groq-sdk';
 import { MoneyInt } from '@/utils/money';
-import logger from '@/config/logger';
-import config from '@/config/ConfigManager'; // Ensure config manager is used
-// Assuming ExternalServiceError is exported from shared/errors
-// If not found, we might need to adjust import path or check shared/errors/index.ts
+import config from '@/config/ConfigManager';
 import { ExternalServiceError } from '@/shared/errors';
+import { ILogger, IGroqClassificationService, IClassificationResult } from '@/shared/di/interfaces';
 
 export interface LineItemClassification {
     description: string;
@@ -13,13 +11,27 @@ export interface LineItemClassification {
     reasoning: string;       // "Food and beverage"
 }
 
-export class GroqClassificationService {
+export class GroqClassificationService implements IGroqClassificationService {
     private client: Groq;
     private model: string;
 
-    constructor(apiKey: string) {
+    /**
+     * Initialize Service with Dependencies
+     * All dependencies are required - fail fast if missing
+     * 
+     * @param logger - Logger instance
+     * @param apiKey - Groq API key
+     */
+    constructor(
+        private readonly logger: ILogger,
+        apiKey: string
+    ) {
+        // Validate required dependencies
+        if (!logger) throw new Error('GroqClassificationService: logger is required');
+        if (!apiKey) throw new Error('GroqClassificationService: apiKey is required');
+        
         this.client = new Groq({ apiKey });
-        this.model = config.get('GROQ_MODEL') || 'mixtral-8x7b-32768'; // Default to a strong text model
+        this.model = config.get('GROQ_MODEL') || 'mixtral-8x7b-32768';
     }
 
     /**
@@ -36,11 +48,11 @@ export class GroqClassificationService {
             totalPrice: MoneyInt;
         }>,
         correlationId: string
-    ): Promise<LineItemClassification[]> {
+    ): Promise<IClassificationResult[]> {
         try {
             const prompt = this.buildLineItemPrompt(lineItems);
 
-            logger.debug({
+            this.logger.debug({
                 correlationId,
                 action: 'groq_classify_line_items_start',
                 itemCount: lineItems.length
@@ -73,7 +85,7 @@ export class GroqClassificationService {
                 (sum, r) => sum + r.confidence, 0
             ) / (result.length || 1);
 
-            logger.info({
+            this.logger.info({
                 correlationId,
                 action: 'groq_classify_line_items_success',
                 itemCount: result.length,
@@ -81,24 +93,57 @@ export class GroqClassificationService {
                 duration
             });
 
-            return result;
+            return result.map(r => ({
+                category: r.category,
+                confidence: r.confidence
+            }));
 
-        } catch (error: any) {
-            logger.error({
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({
                 correlationId,
                 action: 'groq_classify_line_items_failed',
-                error: error.message,
-                stack: error.stack
+                error: errorMessage,
+                stack: error instanceof Error ? error.stack : undefined
             });
 
             // ✅ Fallback: Return "PENDING_REVIEW" for all items
-            return lineItems.map(item => ({
-                description: item.description,
+            return lineItems.map(() => ({
                 category: 'PENDING_REVIEW',
-                confidence: 0.0,
-                reasoning: `AI classification failed: ${error.message}`
+                confidence: 0.0
             }));
         }
+    }
+
+    /**
+     * Classify vendor
+     */
+    async classifyVendor(
+        vendorName: string,
+        correlationId: string
+    ): Promise<IClassificationResult> {
+        // For now, return a simple classification based on vendor name
+        // This can be expanded to use Groq API for classification
+        this.logger.debug({
+            correlationId,
+            action: 'classify_vendor',
+            vendorName
+        });
+
+        // Simple heuristic-based classification
+        const vendorLower = vendorName.toLowerCase();
+        
+        if (vendorLower.includes('7-eleven') || vendorLower.includes('familymart') || vendorLower.includes('tesco')) {
+            return { category: '5100-Food', confidence: 0.9 };
+        }
+        if (vendorLower.includes('grab') || vendorLower.includes('taxi') || vendorLower.includes('uber')) {
+            return { category: '5600-Transportation', confidence: 0.9 };
+        }
+        if (vendorLower.includes('shopee') || vendorLower.includes('lazada') || vendorLower.includes('amazon')) {
+            return { category: '5900-Miscellaneous', confidence: 0.7 };
+        }
+        
+        return { category: 'PENDING_REVIEW', confidence: 0.0 };
     }
 
     /**
@@ -152,18 +197,18 @@ OUTPUT FORMAT (JSON):
                 throw new Error('Invalid response format: missing "items" array');
             }
 
-            return parsed.items.map((item: any) => ({
-                description: item.description || 'Unknown',
-                category: item.category || 'PENDING_REVIEW',
+            return parsed.items.map((item: Record<string, unknown>) => ({
+                description: (item.description as string) || 'Unknown',
+                category: (item.category as string) || 'PENDING_REVIEW',
                 confidence: typeof item.confidence === 'number' ? item.confidence : 0.0,
-                reasoning: item.reasoning || 'No reasoning provided'
+                reasoning: (item.reasoning as string) || 'No reasoning provided'
             }));
 
-        } catch (error: any) {
-            logger.warn({
+        } catch (error: unknown) {
+            this.logger.warn({
                 action: 'groq_parse_failed',
                 rawResponse,
-                error: error.message
+                error: error instanceof Error ? error.message : 'Unknown error'
             });
 
             return [{

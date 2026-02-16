@@ -3,14 +3,10 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { ReceiptController } from '../controllers/ReceiptController';
-import { ReceiptService } from '../services/ReceiptService';
-import logger from '@/config/logger';
-import { TransactionService } from '@/modules/transaction/services/TransactionService';
-import { AccountingService } from '@/modules/accounting/services/AccountingService';
-import { GroqClassificationService } from '@/modules/ai/GroqClassificationService';
-import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetectionService';
 // Note: Auth middleware will be imported when middleware stack is built
 // import { authMiddleware } from '@/middleware/auth.middleware';
+import { container, TOKENS, initializeContainer } from '@/shared/di/container';
+import { IReceiptService } from '@/shared/di/interfaces';
 
 /**
  * RECEIPT ROUTES
@@ -28,16 +24,13 @@ import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetec
 
 const router = Router();
 
-// Initialize service and controller
-// Note: OcrAdapter and StorageAdapter need to be injected
-// This is a placeholder - will be updated when adapters are configured
-const receiptService = new ReceiptService(
-    logger,
-    new TransactionService(logger),
-    new AccountingService(),
-    new GroqClassificationService(process.env.GROQ_API_KEY || ''),
-    new AnomalyDetectionService()
-);
+// Initialize DI container if not already initialized
+if (!container.has(TOKENS.ReceiptService)) {
+    initializeContainer();
+}
+
+// Resolve services from DI container
+const receiptService = container.resolve<IReceiptService>(TOKENS.ReceiptService);
 const controller = new ReceiptController(receiptService);
 
 // ===========================

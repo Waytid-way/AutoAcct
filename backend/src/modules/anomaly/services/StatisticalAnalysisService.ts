@@ -1,20 +1,18 @@
 import Receipt from '../../../models/Receipt.model';
 import config from '../../../config/ConfigManager';
+import { IStatisticalAnalysisService, IVendorStatistics } from '@/shared/di/interfaces';
 
-interface VendorStats {
+interface VendorStats extends IVendorStatistics {
     vendor: string;
-    count: number;
-    avgAmount: number;
-    stdDev: number;
     minAmount: number;
     maxAmount: number;
     mostCommonCategory: string;
-    categoryConfidence: number;  // % of receipts in mostCommonCategory
+    categoryConfidence: number;
 }
 
-export class StatisticalAnalysisService {
+export class StatisticalAnalysisService implements IStatisticalAnalysisService {
     private readonly CACHE_TTL_MS = 60 * 60 * 1000;  // 1 hour
-    private cache: Map<string, { data: any; expiry: number }> = new Map();
+    private cache: Map<string, { data: VendorStats; expiry: number }> = new Map();
 
     /**
      * Get comprehensive statistics for a vendor
@@ -23,7 +21,7 @@ export class StatisticalAnalysisService {
         vendor: string,
         clientId: string,
         lookbackDays: number = 90
-    ): Promise<VendorStats | null> {
+    ): Promise<IVendorStatistics | null> {
         const cacheKey = `${clientId}:${vendor}:${lookbackDays}`;
 
         // ✅ Check cache
@@ -51,7 +49,7 @@ export class StatisticalAnalysisService {
                             $group: {
                                 _id: null,
                                 count: { $sum: 1 },
-                                avg: { $avg: '$extractedFields.amountSatang' }, // Use amountSatang
+                                avg: { $avg: '$extractedFields.amountSatang' },
                                 stdDev: { $stdDevPop: '$extractedFields.amountSatang' },
                                 min: { $min: '$extractedFields.amountSatang' },
                                 max: { $max: '$extractedFields.amountSatang' }
@@ -61,7 +59,6 @@ export class StatisticalAnalysisService {
                     categoryStats: [
                         {
                             $group: {
-                                // Try suggestedCategory first, then classification, then extractedFields
                                 _id: { $ifNull: ["$category", "$extractedFields.category"] },
                                 count: { $sum: 1 }
                             }
@@ -143,7 +140,7 @@ export class StatisticalAnalysisService {
     /**
      * Clear cache for a specific vendor (e.g., after new data)
      */
-    clearCache(vendor?: string, clientId?: string) {
+    clearCache(vendor?: string, clientId?: string): void {
         if (vendor && clientId) {
             Array.from(this.cache.keys())
                 .filter(key => key.startsWith(`${clientId}:${vendor}:`))

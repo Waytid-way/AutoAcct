@@ -1,7 +1,7 @@
 // backend/src/modules/ocr/services/OcrService.ts
 
 import { IOcrAdapter, IOcrResult } from '@adapters/interfaces/IOcrAdapter';
-import { IStorageAdapter } from '@adapters/interfaces/IStorageAdapter';
+import { IStorageAdapter, IOcrService } from '@/shared/di/interfaces';
 import logger from '@config/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -15,14 +15,21 @@ import { v4 as uuidv4 } from 'uuid';
  * - Usage tracking and quota management
  */
 
-export class OcrService {
+export class OcrService implements IOcrService {
   private providers: IOcrAdapter[] = [];
+  private storageAdapter?: IStorageAdapter;
 
+  /**
+   * Initialize OCR Service
+   * @param providers - OCR provider adapters (optional, can be added later)
+   * @param storageAdapter - Storage adapter for file operations (optional)
+   */
   constructor(
-    providers: IOcrAdapter[],
-    private storageAdapter: IStorageAdapter
+    providers?: IOcrAdapter[],
+    storageAdapter?: IStorageAdapter
   ) {
-    this.providers = providers;
+    this.providers = providers || [];
+    this.storageAdapter = storageAdapter;
   }
 
   /**
@@ -34,6 +41,28 @@ export class OcrService {
       action: 'ocr_provider_added',
       provider: provider.name,
       totalProviders: this.providers.length,
+    });
+  }
+
+  /**
+   * Check if service supports a MIME type
+   */
+  supportsMimeType(mimeType: string): boolean {
+    // Supported image types
+    const supportedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+    return supportedTypes.includes(mimeType);
+  }
+
+  /**
+   * Process image (implements IOcrService interface)
+   */
+  async processImage(
+    imageBuffer: Buffer,
+    correlationId: string
+  ): Promise<IOcrResult> {
+    return this.extractReceipt(imageBuffer, {
+      language: 'auto',
+      receiptType: 'receipt'
     });
   }
 
@@ -74,11 +103,11 @@ export class OcrService {
 
       return result;
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error({
         action: 'ocr_extraction_failed',
         correlationId,
-        error: (error as Error).message,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -117,11 +146,15 @@ export class OcrService {
       results.push(...batchResults);
     }
 
+    const avgConfidence = results.length > 0 
+      ? results.reduce((sum, r) => sum + (r.confidenceScores.overall || 0), 0) / results.length 
+      : 0;
+
     logger.info({
       action: 'ocr_batch_completed',
       correlationId,
       processed: results.length,
-      averageConfidence: results.reduce((sum, r) => sum + (r.confidenceScores.overall || 0), 0) / results.length,
+      averageConfidence: avgConfidence,
     });
 
     return results;
@@ -140,9 +173,13 @@ export class OcrService {
   ): Promise<IOcrResult> {
     const correlationId = uuidv4();
 
+    if (!this.storageAdapter) {
+      throw new Error('Storage adapter not configured');
+    }
+
     try {
       // Download file
-      const fileBuffer = await this.storageAdapter.downloadFile(fileId);
+      const fileBuffer = await this.storageAdapter.download(fileId);
 
       logger.info({
         action: 'ocr_file_extraction_started',
@@ -156,12 +193,12 @@ export class OcrService {
 
       return result;
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error({
         action: 'ocr_file_extraction_failed',
         correlationId,
         fileId,
-        error: (error as Error).message,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -187,12 +224,12 @@ export class OcrService {
             latencyMs: health.latencyMs,
             lastChecked: health.lastCheckedAt,
           };
-        } catch (error) {
+        } catch (error: unknown) {
           return {
             name: provider.name,
             healthy: false,
             lastChecked: new Date(),
-            error: (error as Error).message,
+            error: error instanceof Error ? error.message : 'Unknown error',
           };
         }
       })
@@ -213,6 +250,9 @@ export class OcrService {
 
     // Otherwise, select first healthy provider
     // In production, this could implement load balancing
+    if (this.providers.length === 0) {
+      throw new Error('No OCR providers configured');
+    }
     return this.providers[0];
   }
 }
