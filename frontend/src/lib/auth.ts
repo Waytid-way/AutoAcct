@@ -9,7 +9,7 @@
  * migrated to httpOnly cookies in production
  */
 
-import { apiClient } from './api-client';
+import apiClient, { setTokenProvider } from './api-client';
 
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
@@ -236,8 +236,19 @@ class AuthService {
     }
 }
 
-// Export singleton instance
+// Create singleton instance
 export const authService = new AuthService();
 
-// Re-export types
-export type { User, LoginCredentials, AuthResponse };
+// Register token provider to break circular dependency
+// This allows api-client to get tokens without importing auth.ts
+setTokenProvider(() => authService.getToken());
+
+// Mock user for development (when MOCK_AUTH is enabled)
+export const MOCK_USER: User = {
+    id: "user_123",
+    email: "demo@autoacct.com",
+    name: "Demo User",
+    role: "admin",
+};
+
+// Types are already exported as interfaces above

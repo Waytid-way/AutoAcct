@@ -176,14 +176,14 @@ function UploadPageContent() {
 
     const handleConfirm = async (
         receipt: ReceiptDetailResponse["data"],
-        data: { vendor: string; amount: number; date: string; category?: string; lineItems?: LineItem[] }
+        data: { vendor: string | null; amount: number | null; date: string | null; category?: string | null; lineItems?: LineItem[] }
     ) => {
         try {
             await confirmReceipt(receipt.id, {
-                vendor: data.vendor,
-                amount: data.amount,
-                date: data.date,
-                category: data.category,
+                vendor: data.vendor || 'Unknown Vendor',
+                amount: data.amount || 0,
+                date: data.date || new Date().toISOString(),
+                category: data.category || undefined,
                 // notes: receipt.feedback?.reason // Removed notes as it's not in ConfirmReceiptRequest yet
             });
             // Task 5 will add actual line item saving API call here: 

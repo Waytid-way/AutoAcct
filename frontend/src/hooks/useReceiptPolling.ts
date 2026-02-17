@@ -95,7 +95,7 @@ export function useReceiptPolling({
     useEffect(() => {
         if (query.data) {
             const currentStatus = query.data.data.status;
-            const receiptId = query.data.data.id || query.data.data._id;
+            const receiptId = query.data.data.id;
             
             // Create unique key for this callback
             const callbackKey = `${receiptId}-${currentStatus}`;

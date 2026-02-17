@@ -12,6 +12,24 @@ import type {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
 const API_TIMEOUT = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT || "30000");
 
+// Token provider pattern to avoid circular dependency with auth.ts
+let tokenProvider: (() => string | null) | null = null;
+
+/**
+ * Set the token provider function
+ * Called by auth.ts during initialization to provide token access
+ */
+export function setTokenProvider(provider: () => string | null): void {
+    tokenProvider = provider;
+}
+
+/**
+ * Get auth token from the registered provider
+ */
+function getAuthToken(): string | null {
+    return tokenProvider ? tokenProvider() : null;
+}
+
 /**
  * Axios instance with interceptors
  */
@@ -34,7 +52,7 @@ apiClient.interceptors.request.use(
         config.headers.set("x-correlation-id", correlationId);
 
         // Add Authorization header if token exists
-        // Auth token is retrieved from the auth service which manages context/storage
+        // Auth token is retrieved from the registered token provider
         const token = getAuthToken();
         if (token) {
             config.headers.set("Authorization", `Bearer ${token}`);
@@ -81,15 +99,6 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
     }
 );
-
-import { authService } from "./auth";
-
-/**
- * Get auth token (mock implementation)
- */
-function getAuthToken(): string | null {
-    return authService.getToken();
-}
 
 /**
  * Upload receipt file
