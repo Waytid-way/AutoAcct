@@ -31,6 +31,8 @@ import {
     IStorageAdapter,
     IStatisticalAnalysisService,
     IMedicerService,
+    IConfidenceScorer,
+    IGroqPromptService,
 } from './interfaces';
 
 // Service imports
@@ -136,6 +138,10 @@ export const TOKENS = {
     TeableService: 'TeableService',
     WorkflowService: 'WorkflowService',
     StorageAdapter: 'StorageAdapter',
+    // OCR Pipeline Services
+    GroqClient: 'GroqClient',
+    GroqPromptService: 'GroqPromptService',
+    ConfidenceScorer: 'ConfidenceScorer',
 } as const;
 
 /**
@@ -164,6 +170,31 @@ export function initializeContainer(): void {
         new LedgerIntegrationService()
     );
 
+    // Groq Client (singleton - shared across AI services)
+    container.registerSingleton<Groq>(TOKENS.GroqClient, () => {
+        const apiKey = process.env.GROQ_API_KEY || '';
+        if (!apiKey) {
+            logger.warn({
+                action: 'di_container_warning',
+                message: 'GROQ_API_KEY not set, AI services will fail'
+            });
+        }
+        return new Groq({ apiKey });
+    });
+
+    // Confidence Scorer (singleton - stateless)
+    container.registerSingleton(TOKENS.ConfidenceScorer, () => 
+        new ConfidenceScorer()
+    );
+
+    // Groq Prompt Service (singleton - uses shared Groq client)
+    container.registerSingleton(TOKENS.GroqPromptService, () => 
+        new GroqPromptService(
+            container.resolve<Groq>(TOKENS.GroqClient),
+            container.resolve<ILogger>(TOKENS.Logger)
+        )
+    );
+
     // Groq Classification Service (singleton - has API client)
     container.registerSingleton<IGroqClassificationService>(TOKENS.GroqClassificationService, () => {
         const apiKey = process.env.GROQ_API_KEY || '';
@@ -175,7 +206,7 @@ export function initializeContainer(): void {
         }
         return new GroqClassificationService(
             container.resolve<ILogger>(TOKENS.Logger),
-            apiKey
+            container.resolve<Groq>(TOKENS.GroqClient)
         );
     });
 

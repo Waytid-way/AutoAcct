@@ -2,15 +2,16 @@
 
 import { Job } from 'bull';
 import { OCRIntegrationService } from '../services/OCRIntegrationService';
-import { GroqOCRService } from '../services/GroqOCRService';
 import { MockOCRService } from '../services/MockOCRService';
 import Receipt from '@/models/Receipt.model';
 import config from '@/config/ConfigManager';
-import logger from '@/config/logger';
 import { WorkflowService } from '../../workflow/services/WorkflowService';
 import { container, TOKENS } from '@/shared/di/container';
-import { ILogger, IGroqClassificationService } from '@/shared/di/interfaces';
-import { IOcrService } from '@/shared/di/interfaces';
+import { ILogger, IGroqClassificationService, IOcrService, IGroqPromptService, IConfidenceScorer } from '@/shared/di/interfaces';
+import Groq from 'groq-sdk';
+import { GroqOCRService } from '../services/GroqOCRService';
+import { GroqPromptService } from '../services/GroqPromptService';
+import { ConfidenceScorer } from '../services/ConfidenceScorer';
 
 /**
  * Dependencies interface for OCRWorker
@@ -29,8 +30,11 @@ export interface OCRWorkerDependencies {
  * Consumes 'receipt-ocr' queue.
  * Processes images using Groq or Mock service.
  * Updates Receipt in MongoDB.
+ * 
+ * DEPENDENCY INJECTION:
+ * - All dependencies resolved from DI container
+ * - No direct instantiation of services
  */
-import { GroqClassificationService } from '../../ai/GroqClassificationService';
 
 export class OCRWorker {
     private integrationService: OCRIntegrationService;
@@ -50,8 +54,9 @@ export class OCRWorker {
     /**
      * Factory method to create OCRWorker with dependencies from DI container
      * 
-     * REFACTORED: Now uses DI container instead of direct instantiation
-     * This ensures consistent service lifecycle management and testability
+     * DEPENDENCY INJECTION: All services resolved from DI container
+     * - No direct instantiation with 'new'
+     - Services registered in container.ts
      */
     static create(): OCRWorker {
         const logger = container.resolve<ILogger>(TOKENS.Logger);
@@ -63,14 +68,25 @@ export class OCRWorker {
         let classificationService: IGroqClassificationService | undefined;
 
         if (config.get('OCR_SERVICE_MODE') === 'mock' || !config.isProduction()) {
+            // Mock mode: use MockOCRService (registered in container)
             ocrService = new MockOCRService();
             logger.info({ action: 'ocr_worker_init', mode: 'MOCK' });
         } else {
+            // Production mode: Build GroqOCRService with injected dependencies
             const apiKey = config.get('GROQ_API_KEY');
             if (!apiKey) throw new Error('GROQ_API_KEY required for production OCR');
             
-            // Create GroqOCRService with its dependencies
-            ocrService = GroqOCRService.createWithApiKey(apiKey);
+            // Resolve dependencies from container for consistency
+            const groqClient = container.resolve<Groq>(TOKENS.GroqClient);
+            const promptService = container.resolve<IGroqPromptService>(TOKENS.GroqPromptService);
+            const scorer = container.resolve<IConfidenceScorer>(TOKENS.ConfidenceScorer);
+            
+            // Create GroqOCRService with injected dependencies
+            ocrService = new GroqOCRService({
+                groqClient,
+                promptService: promptService as GroqPromptService,
+                scorer: scorer as ConfidenceScorer
+            });
             
             // Resolve classification service from container
             classificationService = container.resolve<IGroqClassificationService>(TOKENS.GroqClassificationService);

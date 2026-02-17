@@ -4,18 +4,37 @@ import Groq from 'groq-sdk';
 import { ParsedOCRFields } from '../types/ocr.types';
 import { ExternalServiceError } from '@/shared/errors';
 import logger from '@/config/logger';
+import { ILogger, IGroqPromptService } from '@/shared/di/interfaces';
 
 /**
  * GROQ PROMPT SERVICE
  * 
  * Step 2 of Pipeline: Text -> Structured Data
  * Uses Llama 3/Mixtral to parse receipt text.
+ * 
+ * DEPENDENCY INJECTION:
+ * - Groq client is injected via constructor (not created internally)
+ * - Logger is injected via constructor
  */
-export class GroqPromptService {
+export class GroqPromptService implements IGroqPromptService {
     private groqClient: Groq;
 
-    constructor(apiKey: string) {
-        this.groqClient = new Groq({ apiKey });
+    /**
+     * Initialize Service with Dependencies
+     * All dependencies are required - fail fast if missing
+     * 
+     * @param groqClient - Configured Groq SDK client
+     * @param logger - Logger instance
+     */
+    constructor(
+        groqClient: Groq,
+        private readonly logger: ILogger
+    ) {
+        // Validate required dependencies
+        if (!groqClient) throw new Error('GroqPromptService: groqClient is required');
+        if (!logger) throw new Error('GroqPromptService: logger is required');
+        
+        this.groqClient = groqClient;
     }
 
     /**
@@ -96,7 +115,7 @@ Important:
                 })) : []
             };
 
-            logger.debug({
+            this.logger.debug({
                 action: 'groq_parse_success',
                 correlationId,
                 result
@@ -105,7 +124,7 @@ Important:
             return result;
 
         } catch (err: any) {
-            logger.error({
+            this.logger.error({
                 action: 'groq_parse_failed',
                 correlationId,
                 error: err.message

@@ -1,6 +1,7 @@
 // backend/src/modules/ocr/services/ConfidenceScorer.ts
 
 import { ParsedOCRFields } from '../types/ocr.types';
+import { IConfidenceScorer } from '@/shared/di/interfaces';
 
 /**
  * CONFIDENCE SCORER
@@ -8,7 +9,7 @@ import { ParsedOCRFields } from '../types/ocr.types';
  * Calculates 0-1 confidence scores for extracted fields using heuristics.
  * Step 3 of OCR Pipeline.
  */
-export class ConfidenceScorer {
+export class ConfidenceScorer implements IConfidenceScorer {
     /**
      * Calculate confidence scores for each field.
      */

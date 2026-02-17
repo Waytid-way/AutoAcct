@@ -44,12 +44,24 @@ export class GroqOCRService {
 
     /**
      * Factory method for creating with default dependencies
+     * 
+     * DEPRECATED: Use DI container instead. This method is kept for backward compatibility
+     * but will be removed in future versions.
+     * 
+     * @deprecated Use container.resolve(TOKENS.OCRService) instead
      */
-    static createWithApiKey(apiKey: string): GroqOCRService {
+    static createWithApiKey(apiKey: string, logger?: import('@/shared/di/interfaces').ILogger): GroqOCRService {
         const groqClient = new Groq({ apiKey });
+        // If logger not provided, create a minimal one for backward compatibility
+        const promptLogger = logger || {
+            info: () => {},
+            warn: () => {},
+            error: () => {},
+            debug: () => {}
+        };
         return new GroqOCRService({
             groqClient,
-            promptService: new GroqPromptService(apiKey),
+            promptService: new GroqPromptService(groqClient, promptLogger),
             scorer: new ConfidenceScorer()
         });
     }

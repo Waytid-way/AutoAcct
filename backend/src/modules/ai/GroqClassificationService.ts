@@ -11,8 +11,16 @@ export interface LineItemClassification {
     reasoning: string;       // "Food and beverage"
 }
 
+/**
+ * GROQ CLASSIFICATION SERVICE
+ * 
+ * Uses Groq AI to classify line items and vendors.
+ * 
+ * DEPENDENCY INJECTION:
+ * - Groq client is injected via constructor (not created internally)
+ * - Logger is injected via constructor
+ */
 export class GroqClassificationService implements IGroqClassificationService {
-    private client: Groq;
     private model: string;
 
     /**
@@ -20,17 +28,16 @@ export class GroqClassificationService implements IGroqClassificationService {
      * All dependencies are required - fail fast if missing
      * 
      * @param logger - Logger instance
-     * @param apiKey - Groq API key
+     * @param groqClient - Configured Groq SDK client
      */
     constructor(
         private readonly logger: ILogger,
-        apiKey: string
+        private readonly groqClient: Groq
     ) {
         // Validate required dependencies
         if (!logger) throw new Error('GroqClassificationService: logger is required');
-        if (!apiKey) throw new Error('GroqClassificationService: apiKey is required');
+        if (!groqClient) throw new Error('GroqClassificationService: groqClient is required');
         
-        this.client = new Groq({ apiKey });
         this.model = config.get('GROQ_MODEL') || 'mixtral-8x7b-32768';
     }
 
@@ -60,7 +67,7 @@ export class GroqClassificationService implements IGroqClassificationService {
 
             const startTime = Date.now();
 
-            const completion = await this.client.chat.completions.create({
+            const completion = await this.groqClient.chat.completions.create({
                 model: this.model,
                 messages: [
                     {

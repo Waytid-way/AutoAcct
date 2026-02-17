@@ -456,3 +456,46 @@ export interface IMedicerService {
         session: unknown
     ): Promise<number>;
 }
+
+// ==================== Confidence Scorer Service ====================
+
+export interface IConfidenceScorer {
+    scoreFields(
+        parsedFields: {
+            vendor?: string;
+            amount?: string;
+            date?: string;
+            taxId?: string;
+            items?: Array<{
+                description: string;
+                quantity?: number;
+                total_price?: string;
+            }>;
+        },
+        rawText: string
+    ): {
+        vendor?: number;
+        amount?: number;
+        date?: number;
+        overall?: number;
+    };
+}
+
+// ==================== Groq Prompt Service ====================
+
+export interface IGroqPromptService {
+    parseReceiptText(
+        rawText: string,
+        correlationId: string
+    ): Promise<{
+        vendor?: string;
+        amount?: string;
+        date?: string;
+        taxId?: string;
+        items?: Array<{
+            description: string;
+            quantity?: number;
+            total_price?: string;
+        }>;
+    }>;
+}
