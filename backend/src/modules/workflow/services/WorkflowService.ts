@@ -5,8 +5,6 @@ import { IReceipt } from '@/models/schemas/Receipt.schema';
 import Receipt from '@/models/Receipt.model'; // Mongoose Model
 import config from '@/config/ConfigManager';
 import logger from '@/config/logger';
-import { TeableService } from '../../teable/adapters/TeableService';
-import { MockTeableService } from '../../teable/adapters/MockTeableService';
 import { ITransactionService, ILogger } from '@/shared/di/interfaces';
 
 /**
@@ -40,39 +38,24 @@ export class WorkflowService {
 
     /**
      * Factory method to create WorkflowService with configured dependencies
+     * 
+     * DEPRECATED: Use DI container resolution instead via container.resolve(TOKENS.WorkflowService)
+     * This factory is kept for backward compatibility but now delegates to the DI container.
      */
     static create(logger: ILogger): WorkflowService {
-        // Teable Factory Logic
-        let teableService: ITeableService;
-
-        if (config.get('TEABLE_SERVICE_MODE') === 'mock' || !config.isProduction()) {
-            teableService = new MockTeableService();
-            logger.info({ action: 'workflow_init', mode: 'MOCK_TEABLE' });
-        } else {
-            const apiKey = config.get('TEABLE_API_KEY');
-            const baseId = config.get('TEABLE_BASE_ID');
-            const tableId = config.get('TEABLE_RECEIPT_TABLE_ID');
-            if (!apiKey || !baseId) throw new Error('Teable Config Missing');
-
-            teableService = new TeableService(
-                config.get('TEABLE_API_URL'),
-                apiKey,
-                baseId,
-                tableId
-            );
-            logger.info({ action: 'workflow_init', mode: 'PROD_TEABLE' });
-        }
-
-        // Import container here to avoid circular dependency
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { container: wfContainer, TOKENS: wfTokens } = require('@/shared/di/container') as { container: typeof import('@/shared/di/container').container; TOKENS: typeof import('@/shared/di/container').TOKENS };
-        const transactionService = wfContainer.resolve<ITransactionService>(wfTokens.TransactionService);
-
-        return new WorkflowService({
-            logger,
-            teableService,
-            transactionService
+        logger.warn({ 
+            action: 'workflow_service_deprecated_factory',
+            message: 'WorkflowService.create() is deprecated. Use DI container.resolve(TOKENS.WorkflowService) instead.' 
         });
+        
+        // Import container here to avoid circular dependency at module load time
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { container: wfContainer, TOKENS: wfTokens } = require('@/shared/di/container') as { 
+            container: typeof import('@/shared/di/container').container; 
+            TOKENS: typeof import('@/shared/di/container').TOKENS 
+        };
+        
+        return wfContainer.resolve<WorkflowService>(wfTokens.WorkflowService);
     }
 
     /**
@@ -85,7 +68,7 @@ export class WorkflowService {
         const startTime = Date.now();
 
         try {
-            logger.info({
+            this.logger.info({
                 action: 'workflow_start',
                 correlationId,
                 receiptId: receipt._id
@@ -129,7 +112,7 @@ export class WorkflowService {
                 workflowDuration: Date.now() - startTime
             });
 
-            logger.info({
+            this.logger.info({
                 action: 'workflow_complete',
                 correlationId,
                 teableId: teableResult.id,
@@ -140,7 +123,7 @@ export class WorkflowService {
 
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            logger.error({
+            this.logger.error({
                 action: 'workflow_failed',
                 correlationId,
                 error: errorMessage

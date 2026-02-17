@@ -18,6 +18,7 @@
 
 import { Logger } from 'winston';
 import logger from '@/config/logger';
+import config from '@/config/ConfigManager';
 import {
     ILogger,
     IReceiptService,
@@ -42,6 +43,15 @@ import { AnomalyDetectionService } from '@/modules/anomaly/services/AnomalyDetec
 import { StatisticalAnalysisService } from '@/modules/anomaly/services/StatisticalAnalysisService';
 import { MedicerService } from '@/modules/accounting/services/MedicerService';
 import { OcrService } from '@/modules/ocr/services/OcrService';
+import { OCRIntegrationService } from '@/modules/ocr/services/OCRIntegrationService';
+import { MockOCRService } from '@/modules/ocr/services/MockOCRService';
+import { GroqOCRService } from '@/modules/ocr/services/GroqOCRService';
+import { GroqPromptService } from '@/modules/ocr/services/GroqPromptService';
+import { ConfidenceScorer } from '@/modules/ocr/services/ConfidenceScorer';
+import { TeableService } from '@/modules/teable/adapters/TeableService';
+import { MockTeableService } from '@/modules/teable/adapters/MockTeableService';
+import { WorkflowService } from '@/modules/workflow/services/WorkflowService';
+import Groq from 'groq-sdk';
 
 // Service registry type
 type ServiceFactory<T> = () => T;
@@ -122,6 +132,9 @@ export const TOKENS = {
     AnomalyDetectionService: 'AnomalyDetectionService',
     StatisticalAnalysisService: 'StatisticalAnalysisService',
     OCRService: 'OCRService',
+    OCRIntegrationService: 'OCRIntegrationService',
+    TeableService: 'TeableService',
+    WorkflowService: 'WorkflowService',
     StorageAdapter: 'StorageAdapter',
 } as const;
 
@@ -208,6 +221,48 @@ export function initializeContainer(): void {
     // OCR Service (singleton - has model loading)
     container.registerSingleton<IOcrService>(TOKENS.OCRService, () => 
         new OcrService()
+    );
+
+    // OCR Integration Service (singleton - manages Bull queue)
+    container.registerSingleton(TOKENS.OCRIntegrationService, () => 
+        new OCRIntegrationService()
+    );
+
+    // Teable Service (singleton - external API client)
+    // Uses factory pattern for mock/prod switching
+    container.registerSingleton(TOKENS.TeableService, () => {
+        const isMock = config.get('TEABLE_SERVICE_MODE') === 'mock' || !config.isProduction();
+        
+        if (isMock) {
+            logger.info({ action: 'di_container', service: 'TeableService', mode: 'MOCK' });
+            return new MockTeableService();
+        } else {
+            const apiKey = config.get('TEABLE_API_KEY');
+            const baseId = config.get('TEABLE_BASE_ID');
+            const tableId = config.get('TEABLE_RECEIPT_TABLE_ID');
+            const apiUrl = config.get('TEABLE_API_URL');
+            
+            if (!apiKey || !baseId) {
+                logger.warn({ 
+                    action: 'di_container_warning', 
+                    service: 'TeableService',
+                    message: 'Teable config missing, falling back to mock' 
+                });
+                return new MockTeableService();
+            }
+            
+            logger.info({ action: 'di_container', service: 'TeableService', mode: 'PRODUCTION' });
+            return new TeableService(apiUrl, apiKey, baseId, tableId);
+        }
+    });
+
+    // Workflow Service (singleton - orchestrates OCR completion workflow)
+    container.registerSingleton(TOKENS.WorkflowService, () => 
+        new WorkflowService({
+            logger: container.resolve<ILogger>(TOKENS.Logger),
+            teableService: container.resolve(TOKENS.TeableService),
+            transactionService: container.resolve<ITransactionService>(TOKENS.TransactionService)
+        })
     );
 
     logger.info({ 

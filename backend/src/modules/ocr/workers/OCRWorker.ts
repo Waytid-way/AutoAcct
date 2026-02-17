@@ -20,6 +20,7 @@ export interface OCRWorkerDependencies {
     workflowService: WorkflowService;
     ocrService: IOcrService;
     classificationService?: IGroqClassificationService;
+    logger: ILogger;
 }
 
 /**
@@ -36,22 +37,28 @@ export class OCRWorker {
     private ocrService: IOcrService;
     private classificationService: IGroqClassificationService | undefined;
     private workflowService: WorkflowService;
+    private logger: ILogger;
 
     constructor(dependencies: OCRWorkerDependencies) {
         this.integrationService = dependencies.integrationService;
         this.workflowService = dependencies.workflowService;
         this.ocrService = dependencies.ocrService;
         this.classificationService = dependencies.classificationService;
+        this.logger = dependencies.logger;
     }
 
     /**
-     * Factory method to create OCRWorker with configured dependencies
+     * Factory method to create OCRWorker with dependencies from DI container
+     * 
+     * REFACTORED: Now uses DI container instead of direct instantiation
+     * This ensures consistent service lifecycle management and testability
      */
     static create(): OCRWorker {
-        const integrationService = new OCRIntegrationService();
-        const workflowService = WorkflowService.create(container.resolve<ILogger>(TOKENS.Logger));
+        const logger = container.resolve<ILogger>(TOKENS.Logger);
+        const integrationService = container.resolve<OCRIntegrationService>(TOKENS.OCRIntegrationService);
+        const workflowService = container.resolve<WorkflowService>(TOKENS.WorkflowService);
 
-        // Factory Logic for Processor
+        // Factory Logic for OCR Service (mock vs production)
         let ocrService: IOcrService;
         let classificationService: IGroqClassificationService | undefined;
 
@@ -61,11 +68,13 @@ export class OCRWorker {
         } else {
             const apiKey = config.get('GROQ_API_KEY');
             if (!apiKey) throw new Error('GROQ_API_KEY required for production OCR');
+            
+            // Create GroqOCRService with its dependencies
             ocrService = GroqOCRService.createWithApiKey(apiKey);
-            classificationService = new GroqClassificationService(
-                container.resolve<ILogger>(TOKENS.Logger),
-                apiKey
-            );
+            
+            // Resolve classification service from container
+            classificationService = container.resolve<IGroqClassificationService>(TOKENS.GroqClassificationService);
+            
             logger.info({ action: 'ocr_worker_init', mode: 'GROQ_PRODUCTION' });
         }
 
@@ -73,7 +82,8 @@ export class OCRWorker {
             integrationService,
             workflowService,
             ocrService,
-            classificationService
+            classificationService,
+            logger
         });
     }
 
@@ -82,6 +92,7 @@ export class OCRWorker {
      */
     start() {
         const queue = this.integrationService.getQueue();
+        const logger = this.logger; // Capture for closure
 
         queue.process(async (job: Job) => {
             const { receiptId, imageUrl, correlationId } = job.data;
