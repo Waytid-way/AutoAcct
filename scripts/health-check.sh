@@ -1,12 +1,25 @@
 #!/bin/bash
-set -e
+#
+# Health Check Script for AutoAcct
+#
+# Usage:
+#   ./health-check.sh [component]
+#
+# Components:
+#   all       - Check all services (default)
+#   backend   - Check backend only
+#   frontend  - Check frontend only
+#   database  - Check database only
+#   external  - Check external APIs only
+#
+# Exit Codes:
+#   0 - All checks passed
+#   1 - One or more checks failed
+#
 
-# ===========================================
-# AutoAcct Health Check Script
-# ===========================================
-# Comprehensive health checks for all AutoAcct services
+set -euo pipefail
 
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -14,224 +27,290 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_URL="${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3001}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+COMPONENT="${1:-all}"
+TIMEOUT="${TIMEOUT:-10}"
+VERBOSE="${VERBOSE:-false}"
+
+# Service URLs
+BACKEND_URL="${BACKEND_URL:-http://localhost:3001}"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
-TIMEOUT=10
 
-# Track overall health
-overall_healthy=true
+# Track overall status
+EXIT_CODE=0
 
-echo -e "${BLUE}🏥 AutoAcct Health Check${NC}"
-echo "========================"
-echo ""
-echo "Backend:  $BACKEND_URL"
-echo "Frontend: $FRONTEND_URL"
-echo ""
+# Functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
+log_success() {
+    echo -e "${GREEN}[PASS]${NC} $1"
+}
 
-check_http() {
-    local name=$1
-    local url=$2
-    local expected_code=${3:-200}
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $1"
+    EXIT_CODE=1
+}
+
+# Check if a URL is reachable
+check_url() {
+    local name="$1"
+    local url="$2"
+    local expected_status="${3:-200}"
     
-    echo -n "Checking $name... "
+    log_info "Checking $name at $url..."
     
-    if response=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$url" 2>/dev/null); then
-        if [ "$response" -eq "$expected_code" ]; then
-            echo -e "${GREEN}✓${NC} ($response)"
+    local response
+    local status_code
+    
+    if response=$(curl -sf --max-time "$TIMEOUT" -w "\n%{http_code}" "$url" 2>/dev/null); then
+        status_code=$(echo "$response" | tail -n1)
+        
+        if [[ "$status_code" == "$expected_status" ]]; then
+            log_success "$name is healthy (HTTP $status_code)"
             return 0
         else
-            echo -e "${RED}✗${NC} (expected $expected_code, got $response)"
+            log_error "$name returned HTTP $status_code (expected $expected_status)"
             return 1
         fi
     else
-        echo -e "${RED}✗${NC} (connection failed)"
+        log_error "$name is unreachable"
         return 1
     fi
 }
 
-check_json_field() {
-    local name=$1
-    local url=$2
-    local field=$3
-    local expected=$4
+# Check backend health
+check_backend() {
+    echo
+    log_info "=== Backend Health Checks ==="
     
-    echo -n "Checking $name... "
+    # Main health endpoint
+    check_url "Backend Health" "$BACKEND_URL/health"
     
-    if response=$(curl -s --max-time "$TIMEOUT" "$url" 2>/dev/null); then
-        value=$(echo "$response" | grep -o '"'$field'"[^,}]*' | cut -d':' -f2 | tr -d '"' | xargs)
-        if [ "$value" = "$expected" ]; then
-            echo -e "${GREEN}✓${NC} ($field: $expected)"
-            return 0
+    # Liveness probe
+    check_url "Liveness" "$BACKEND_URL/health/live"
+    
+    # Readiness probe
+    check_url "Readiness" "$BACKEND_URL/health/ready"
+    
+    # API endpoints
+    if [[ "$VERBOSE" == "true" ]]; then
+        log_info "Checking API endpoints..."
+        
+        # These might return 401/403 without auth, which is fine
+        local api_status
+        api_status=$(curl -sf --max-time "$TIMEOUT" -w "%{http_code}" -o /dev/null "$BACKEND_URL/api/receipts/stats" 2>/dev/null || echo "000")
+        
+        if [[ "$api_status" == "401" || "$api_status" == "403" ]]; then
+            log_success "API endpoints are accessible (auth required)"
+        elif [[ "$api_status" == "200" ]]; then
+            log_success "API endpoints are accessible"
         else
-            echo -e "${RED}✗${NC} (expected $field=$expected, got $value)"
-            return 1
+            log_warn "API endpoints returned HTTP $api_status"
         fi
-    else
-        echo -e "${RED}✗${NC} (connection failed)"
-        return 1
     fi
 }
 
-# ============================================
-# CHECK SERVICES
-# ============================================
+# Check frontend health
+check_frontend() {
+    echo
+    log_info "=== Frontend Health Checks ==="
+    
+    check_url "Frontend" "$FRONTEND_URL"
+}
 
-echo -e "${BLUE}📋 Service Health Checks${NC}"
-echo ""
-
-# Backend Liveness
-if ! check_http "Backend (Liveness)" "$BACKEND_URL/health/live"; then
-    overall_healthy=false
-fi
-
-# Backend Readiness
-if ! check_json_field "Backend (Readiness)" "$BACKEND_URL/health/ready" "status" "ready"; then
-    overall_healthy=false
-fi
-
-# Frontend
-if ! check_http "Frontend" "$FRONTEND_URL"; then
-    overall_healthy=false
-fi
-
-echo ""
-
-# ============================================
-# CHECK DATABASE (if Docker is running)
-# ============================================
-
-echo -e "${BLUE}📋 Database Checks${NC}"
-echo ""
-
-# Check MongoDB (Docker)
-if docker ps --format "{{.Names}}" | grep -q "autoacct-mongodb"; then
-    echo -e "${GREEN}✓${NC} MongoDB container: Running"
-else
-    echo -e "${YELLOW}⚠${NC} MongoDB container: Not running (may be using external MongoDB)"
-fi
-
-# Check Redis (Docker)
-if docker ps --format "{{.Names}}" | grep -q "autoacct-redis"; then
-    echo -e "${GREEN}✓${NC} Redis container: Running"
-else
-    echo -e "${YELLOW}⚠${NC} Redis container: Not running"
-fi
-
-echo ""
-
-# ============================================
-# CHECK EXTERNAL APIs (if configured)
-# ============================================
-
-echo -e "${BLUE}📋 External API Checks${NC}"
-echo ""
-
-# Load .env file
-if [ -f "$PROJECT_ROOT/.env" ]; then
-    export $(grep -v '^#' "$PROJECT_ROOT/.env" | xargs)
-fi
-
-# Check Groq API
-if [ -n "$GROQ_API_KEY" ]; then
-    echo -n "Checking Groq API... "
-    if curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
-         -H "Authorization: Bearer $GROQ_API_KEY" \
-         https://api.groq.com/openai/v1/models 2>/dev/null | grep -q "200"; then
-        echo -e "${GREEN}✓${NC} (authenticated)"
-    else
-        echo -e "${RED}✗${NC} (authentication failed)"
-        overall_healthy=false
+# Check database connectivity
+check_database() {
+    echo
+    log_info "=== Database Health Checks ==="
+    
+    if [[ -z "${DATABASE_URL:-}" ]]; then
+        log_warn "DATABASE_URL not set, skipping database check"
+        return 0
     fi
-else
-    echo -e "${YELLOW}⚠${NC} Groq API: Not configured (GROQ_API_KEY not set)"
-fi
-
-# Check Teable API (optional)
-if [ -n "$TEABLE_API_KEY" ] && [ -n "$TEABLE_API_URL" ]; then
-    echo -n "Checking Teable API... "
-    if curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
-         -H "Authorization: Bearer $TEABLE_API_KEY" \
-         "$TEABLE_API_URL/base/$TEABLE_BASE_ID" 2>/dev/null | grep -q "200"; then
-        echo -e "${GREEN}✓${NC} (authenticated)"
+    
+    # Try to connect using mongosh or mongo
+    if command -v mongosh &> /dev/null; then
+        if mongosh "$DATABASE_URL" --eval "db.adminCommand('ping')" --quiet > /dev/null 2>&1; then
+            log_success "Database is reachable"
+        else
+            log_error "Database connection failed"
+        fi
+    elif command -v mongo &> /dev/null; then
+        if mongo "$DATABASE_URL" --eval "db.adminCommand('ping')" --quiet > /dev/null 2>&1; then
+            log_success "Database is reachable"
+        else
+            log_error "Database connection failed"
+        fi
     else
-        echo -e "${YELLOW}⚠${NC} (connection failed - check API key and URL)"
+        log_warn "Neither mongosh nor mongo CLI found, skipping database check"
     fi
-else
-    echo -e "${YELLOW}⚠${NC} Teable API: Not configured"
-fi
+}
 
-echo ""
-
-# ============================================
-# CHECK DISK SPACE
-# ============================================
-
-echo -e "${BLUE}📋 System Resources${NC}"
-echo ""
-
-# Disk usage
-if command -v df >/dev/null 2>&1; then
-    disk_usage=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
-    if [ "$disk_usage" -lt 80 ]; then
-        echo -e "${GREEN}✓${NC} Disk usage: ${disk_usage}%"
-    elif [ "$disk_usage" -lt 90 ]; then
-        echo -e "${YELLOW}⚠${NC} Disk usage: ${disk_usage}% (getting full)"
+# Check external APIs
+check_external() {
+    echo
+    log_info "=== External API Checks ==="
+    
+    # Check Groq API
+    if [[ -n "${GROQ_API_KEY:-}" ]]; then
+        log_info "Checking Groq API..."
+        
+        local response
+        if response=$(curl -sf --max-time "$TIMEOUT" \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "Content-Type: application/json" \
+            https://api.groq.com/openai/v1/models 2>/dev/null); then
+            log_success "Groq API is accessible"
+            
+            if [[ "$VERBOSE" == "true" ]]; then
+                local model_count=$(echo "$response" | grep -o '"id"' | wc -l)
+                log_info "  Available models: $model_count"
+            fi
+        else
+            log_error "Groq API is unreachable or API key is invalid"
+        fi
     else
-        echo -e "${RED}✗${NC} Disk usage: ${disk_usage}% (critical)"
-        overall_healthy=false
+        log_warn "GROQ_API_KEY not set, skipping Groq API check"
     fi
-fi
+    
+    # Check other external services as needed
+    # Add more checks here...
+}
 
-# Memory usage (if available)
-if command -v free >/dev/null 2>&1; then
-    mem_usage=$(free | grep Mem | awk '{printf "%.0f", $3/$2 * 100}')
-    if [ "$mem_usage" -lt 80 ]; then
-        echo -e "${GREEN}✓${NC} Memory usage: ${mem_usage}%"
-    elif [ "$mem_usage" -lt 90 ]; then
-        echo -e "${YELLOW}⚠${NC} Memory usage: ${mem_usage}% (high)"
+# Check system resources
+check_system() {
+    echo
+    log_info "=== System Resource Checks ==="
+    
+    # Check disk space
+    local disk_usage
+    disk_usage=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+    
+    if [[ "$disk_usage" -lt 80 ]]; then
+        log_success "Disk usage: ${disk_usage}%"
+    elif [[ "$disk_usage" -lt 90 ]]; then
+        log_warn "Disk usage: ${disk_usage}% (consider cleanup)"
     else
-        echo -e "${RED}✗${NC} Memory usage: ${mem_usage}% (critical)"
+        log_error "Disk usage: ${disk_usage}% (critical)"
     fi
-fi
+    
+    # Check memory
+    if command -v free &> /dev/null; then
+        local mem_usage
+        mem_usage=$(free | grep Mem | awk '{printf "%.0f", $3/$2 * 100.0}')
+        
+        if [[ "$mem_usage" -lt 80 ]]; then
+            log_success "Memory usage: ${mem_usage}%"
+        elif [[ "$mem_usage" -lt 90 ]]; then
+            log_warn "Memory usage: ${mem_usage}%"
+        else
+            log_error "Memory usage: ${mem_usage}% (critical)"
+        fi
+    fi
+}
 
-echo ""
+# Check Docker containers (if running in Docker)
+check_docker() {
+    echo
+    log_info "=== Docker Container Checks ==="
+    
+    if ! command -v docker &> /dev/null; then
+        log_info "Docker not found, skipping container checks"
+        return 0
+    fi
+    
+    if ! docker info > /dev/null 2>&1; then
+        log_warn "Docker daemon not running, skipping container checks"
+        return 0
+    fi
+    
+    # Check if autoacct containers are running
+    local containers
+    containers=$(docker ps --filter "name=autoacct" --format "{{.Names}}" 2>/dev/null || true)
+    
+    if [[ -z "$containers" ]]; then
+        log_warn "No AutoAcct containers found"
+        return 0
+    fi
+    
+    while IFS= read -r container; do
+        if [[ -n "$container" ]]; then
+            local status
+            status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+            
+            if [[ "$status" == "running" ]]; then
+                log_success "Container $container is running"
+            else
+                log_error "Container $container status: $status"
+            fi
+        fi
+    done <<< "$containers"
+}
 
-# ============================================
-# DETAILED BACKEND HEALTH
-# ============================================
+# Print summary
+print_summary() {
+    echo
+    log_info "=== Health Check Summary ==="
+    
+    if [[ $EXIT_CODE -eq 0 ]]; then
+        log_success "All health checks passed!"
+    else
+        log_error "Some health checks failed. Please review the output above."
+    fi
+    
+    echo
+    echo "Checked at: $(date)"
+}
 
-echo -e "${BLUE}📋 Detailed Backend Health${NC}"
-echo ""
+# Main execution
+main() {
+    log_info "AutoAcct Health Check Tool"
+    log_info "Component: $COMPONENT"
+    log_info "Timeout: ${TIMEOUT}s"
+    
+    case "$COMPONENT" in
+        all)
+            check_backend
+            check_frontend
+            check_database
+            check_external
+            check_system
+            check_docker
+            ;;
+        backend)
+            check_backend
+            ;;
+        frontend)
+            check_frontend
+            ;;
+        database)
+            check_database
+            ;;
+        external)
+            check_external
+            ;;
+        system)
+            check_system
+            ;;
+        docker)
+            check_docker
+            ;;
+        *)
+            echo "Usage: $0 [all|backend|frontend|database|external|system|docker]"
+            exit 1
+            ;;
+    esac
+    
+    print_summary
+    
+    exit $EXIT_CODE
+}
 
-if response=$(curl -s --max-time "$TIMEOUT" "$BACKEND_URL/health" 2>/dev/null); then
-    echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
-else
-    echo -e "${YELLOW}⚠${NC} Could not fetch detailed health"
-fi
-
-echo ""
-
-# ============================================
-# SUMMARY
-# ============================================
-
-if [ "$overall_healthy" = true ]; then
-    echo -e "${GREEN}✅ All Health Checks Passed${NC}"
-    echo ""
-    echo "AutoAcct is healthy and ready!"
-    exit 0
-else
-    echo -e "${RED}❌ Some Health Checks Failed${NC}"
-    echo ""
-    echo "Please check the errors above and:"
-    echo "  1. Ensure all services are running"
-    echo "  2. Check environment variables in .env"
-    echo "  3. Verify external API keys are valid"
-    echo "  4. Review logs: docker-compose logs -f"
-    exit 1
-fi
+main "$@"
